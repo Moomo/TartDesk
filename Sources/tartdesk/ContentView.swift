@@ -259,6 +259,26 @@ struct ContentView: View {
                         .buttonStyle(.plain)
                         .disabled(viewModel.isWorking || !viewModel.selectedVMCanEditSettings)
                         .help(vm.running ? "Stop the VM to edit settings" : "Edit VM settings")
+
+                        Menu {
+                            Button("Delete VM", role: .destructive) {
+                                isShowingDeleteConfirmation = true
+                            }
+                            .disabled(viewModel.isWorking)
+                        } label: {
+                            Image(systemName: "ellipsis")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(slate900)
+                                .frame(width: 30, height: 30)
+                                .background(Color(NSColor.controlBackgroundColor), in: Circle())
+                                .overlay(
+                                    Circle()
+                                        .stroke(slate200.opacity(0.9), lineWidth: 1)
+                                )
+                        }
+                        .menuStyle(.borderlessButton)
+                        .menuIndicator(.hidden)
+                        .help("More actions")
                     }
                 }
                 Text(vm.stateLabel.capitalized)
@@ -281,31 +301,36 @@ struct ContentView: View {
     private func actionBar(for vm: TartVM) -> some View {
         HStack(spacing: 10) {
             if vm.isLocal {
-                Button("Run") {
-                    Task { await viewModel.runVM(mode: .graphics) }
-                }
-                .buttonStyle(.borderedProminent)
-                .disabled(viewModel.isWorking)
+                HStack(spacing: 0) {
+                    Button("Run") {
+                        Task { await viewModel.runVM(mode: .graphics) }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(vm.running || viewModel.isWorking)
 
-                Button("Run Headless") {
-                    Task { await viewModel.runVM(mode: .headless) }
+                    Menu {
+                        Button("Run Headless") {
+                            Task { await viewModel.runVM(mode: .headless) }
+                        }
+                    } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 11, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Color.accentColor)
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .padding(.leading, 6)
+                    .disabled(vm.running || viewModel.isWorking)
                 }
-                .disabled(viewModel.isWorking)
 
                 Button("Stop") {
                     Task { await viewModel.runAction(.stop) }
                 }
                 .disabled(!vm.running || viewModel.isWorking)
-
-                Button("Suspend") {
-                    Task { await viewModel.runAction(.suspend) }
-                }
-                .disabled(!vm.running || viewModel.isWorking)
-
-                Button("Delete", role: .destructive) {
-                    isShowingDeleteConfirmation = true
-                }
-                .disabled(viewModel.isWorking)
             } else {
                 Button("Create Local VM") {
                     viewModel.prepareCloneFromSelectedVM()

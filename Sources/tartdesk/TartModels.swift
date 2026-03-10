@@ -111,7 +111,6 @@ enum TartSourceFilter: String, CaseIterable, Identifiable {
 enum TartAction: String, CaseIterable, Identifiable {
     case run
     case stop
-    case suspend
     case delete
 
     var id: String { rawValue }
@@ -120,7 +119,6 @@ enum TartAction: String, CaseIterable, Identifiable {
         switch self {
         case .run: "Run"
         case .stop: "Stop"
-        case .suspend: "Suspend"
         case .delete: "Delete"
         }
     }
@@ -129,7 +127,6 @@ enum TartAction: String, CaseIterable, Identifiable {
         switch self {
         case .run: ["run", name]
         case .stop: ["stop", name]
-        case .suspend: ["suspend", name]
         case .delete: ["delete", name]
         }
     }
