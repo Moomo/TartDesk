@@ -364,8 +364,57 @@ struct ContentView: View {
                 }
             }
 
+            sshCard
             guestAgentCard
         }
+    }
+
+    private var sshCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("SSH")
+                .font(.headline)
+
+            Text(viewModel.sshStatus.title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundStyle(Color.white.opacity(0.92))
+
+            if viewModel.sshStatus.ipAddress != nil {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Text("User")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        TextField("admin", text: $viewModel.sshUsername)
+                            .textFieldStyle(.roundedBorder)
+                            .frame(width: 180)
+                    }
+
+                    Text(viewModel.selectedVMSSHCommand ?? "")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(Color.white.opacity(0.94))
+                        .padding(12)
+                        .background(Color.white.opacity(0.10), in: RoundedRectangle(cornerRadius: 12))
+
+                    HStack(spacing: 10) {
+                        Button("Copy SSH Command") {
+                            viewModel.copySSHCommand()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(!viewModel.selectedVMCanUseSSH)
+
+                        Button("Open in Terminal") {
+                            viewModel.openSSHInTerminal()
+                        }
+                        .buttonStyle(.bordered)
+                        .disabled(!viewModel.selectedVMCanUseSSH)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18))
     }
 
     private var guestAgentCard: some View {
@@ -388,7 +437,7 @@ struct ContentView: View {
 
             Text(viewModel.guestAgentStatus.title)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .foregroundStyle(slate900)
+                .foregroundStyle(Color.white.opacity(0.92))
         }
         .padding(16)
         .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18))

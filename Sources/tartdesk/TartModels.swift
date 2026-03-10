@@ -196,6 +196,28 @@ struct TartCapabilities: Hashable {
     }
 }
 
+enum SSHStatus: Hashable {
+    case unavailable(String)
+    case loading
+    case available(ipAddress: String)
+
+    var title: String {
+        switch self {
+        case let .unavailable(message):
+            return message
+        case .loading:
+            return "Resolving VM IP address with `tart ip`..."
+        case let .available(ipAddress):
+            return "IP Address: \(ipAddress)"
+        }
+    }
+
+    var ipAddress: String? {
+        guard case let .available(ipAddress) = self else { return nil }
+        return ipAddress
+    }
+}
+
 enum GuestAgentStatus: Hashable {
     case unknown(String)
     case unsupportedCLI

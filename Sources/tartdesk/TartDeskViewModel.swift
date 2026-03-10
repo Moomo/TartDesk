@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Observation
 import SwiftUI
@@ -21,6 +22,8 @@ final class TartDeskViewModel {
     var launchedGraphicsPIDs: [String: pid_t] = [:]
     var tartCapabilities: TartCapabilities?
     var guestAgentStatus: GuestAgentStatus = .unknown("Checking Tart capabilities...")
+    var sshStatus: SSHStatus = .unavailable("Start a local VM to fetch its IP address.")
+    var sshUsername = "admin"
 
     private let service = TartCLIService()
 
@@ -75,6 +78,17 @@ final class TartDeskViewModel {
         return vm.isLocal && !vm.running && details != nil
     }
 
+    var selectedVMCanUseSSH: Bool {
+        guard let vm = selectedVM else { return false }
+        return vm.isLocal && vm.running && sshStatus.ipAddress != nil
+    }
+
+    var selectedVMSSHCommand: String? {
+        guard let ipAddress = sshStatus.ipAddress else { return nil }
+        let username = sshUsername.trimmingCharacters(in: .whitespacesAndNewlines)
+        return username.isEmpty ? "ssh \(ipAddress)" : "ssh \(username)@\(ipAddress)"
+    }
+
     func loadInitialData() async {
         if vms.isEmpty {
             await loadCapabilities()
@@ -101,10 +115,12 @@ final class TartDeskViewModel {
             selectedVMID = selectedVMID ?? vms.first?.id
             if let vm = selectedVM {
                 try await loadDetails(for: vm)
+                await loadSSHStatus(for: vm)
             } else {
                 details = nil
                 selectedInfoMessage = nil
                 guestAgentStatus = .unknown("Select a VM to inspect Guest Agent support.")
+                sshStatus = .unavailable("Select a VM to inspect SSH connectivity.")
             }
         } catch {
             present(error)
@@ -121,6 +137,7 @@ final class TartDeskViewModel {
 
         do {
             try await loadDetails(for: vm)
+            await loadSSHStatus(for: vm)
             await probeGuestAgentIfNeeded(for: vm)
         } catch {
             present(error)
@@ -164,6 +181,7 @@ final class TartDeskViewModel {
             try? await Task.sleep(for: .seconds(1))
             await refresh()
             await probeGuestAgentIfNeeded(for: vm)
+            await loadSSHStatus(for: vm)
         } catch {
             present(error)
         }
@@ -277,11 +295,33 @@ final class TartDeskViewModel {
         errorMessage = nil
     }
 
+    func copySSHCommand() {
+        guard let command = selectedVMSSHCommand else { return }
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(command, forType: .string)
+        lastCommandOutput = "Copied SSH command: \(command)"
+    }
+
+    func openSSHInTerminal() {
+        guard let command = selectedVMSSHCommand else {
+            errorMessage = "SSH command is not available for the selected VM."
+            return
+        }
+
+        do {
+            try service.openSSHInTerminal(command: command)
+            lastCommandOutput = "Opened Terminal with: \(command)"
+        } catch {
+            present(error)
+        }
+    }
+
     private func loadDetails(for vm: TartVM) async throws {
         guard vm.isLocal else {
             details = nil
             selectedInfoMessage = "OCI images do not support `tart get`. Clone this image to create a local VM, then inspect and run it."
             guestAgentStatus = .notLocalVM
+            sshStatus = .unavailable("SSH applies only to local running VMs.")
             return
         }
 
@@ -357,6 +397,25 @@ final class TartDeskViewModel {
             return
         }
         guestAgentStatus = .unknown("Probing Guest Agent with `tart exec`...")
+    }
+
+    private func loadSSHStatus(for vm: TartVM) async {
+        guard vm.isLocal else {
+            sshStatus = .unavailable("SSH applies only to local running VMs.")
+            return
+        }
+        guard vm.running else {
+            sshStatus = .unavailable("Start the VM to fetch its IP address for SSH.")
+            return
+        }
+
+        sshStatus = .loading
+        do {
+            let ipAddress = try await service.fetchIPAddress(for: vm.name)
+            sshStatus = .available(ipAddress: ipAddress)
+        } catch {
+            sshStatus = .unavailable(error.localizedDescription)
+        }
     }
 
     private func probeGuestAgentIfNeeded(for vm: TartVM) async {

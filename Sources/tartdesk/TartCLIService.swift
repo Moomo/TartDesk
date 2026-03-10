@@ -131,6 +131,34 @@ struct TartCLIService {
         }
     }
 
+    func fetchIPAddress(for name: String) async throws -> String {
+        let result = try await run(arguments: ["ip", name])
+        let ipAddress = result.stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !ipAddress.isEmpty else {
+            throw TartCLIError.ipAddressUnavailable(name: name)
+        }
+        return ipAddress
+    }
+
+    func openSSHInTerminal(command: String) throws {
+        let escapedCommand = command
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+
+        let scriptSource = """
+        tell application "Terminal"
+            activate
+            do script "\(escapedCommand)"
+        end tell
+        """
+
+        var error: NSDictionary?
+        NSAppleScript(source: scriptSource)?.executeAndReturnError(&error)
+        if error != nil {
+            throw TartCLIError.openTerminalFailed
+        }
+    }
+
     @discardableResult
     func run(arguments: [String]) async throws -> TartCommandResult {
         let process = configuredProcess(arguments: arguments)
@@ -267,6 +295,8 @@ enum TartCLIError: LocalizedError {
     case windowFocusFailed(name: String)
     case windowFocusTimedOut(name: String)
     case accessibilityPermissionRequired
+    case ipAddressUnavailable(name: String)
+    case openTerminalFailed
 
     var errorDescription: String? {
         switch self {
@@ -281,6 +311,10 @@ enum TartCLIError: LocalizedError {
             return "Timed out while trying to focus the Tart window for \(name). Check Accessibility permission for TartDesk."
         case .accessibilityPermissionRequired:
             return "Accessibility permission is required to focus a specific Tart window. Allow TartDesk in System Settings > Privacy & Security > Accessibility."
+        case let .ipAddressUnavailable(name):
+            return "No IP address was reported for \(name). Start the VM and wait until networking is ready."
+        case .openTerminalFailed:
+            return "Failed to open Terminal for the SSH command."
         }
     }
 }
