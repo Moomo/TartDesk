@@ -225,22 +225,41 @@ struct ContentView: View {
                 }
                 Spacer()
                 if vm.isLocal {
-                    Button {
-                        viewModel.prepareEditSheet()
-                    } label: {
-                        Image(systemName: "gearshape.fill")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: 30, height: 30)
-                            .background(Color.accentColor, in: Circle())
-                            .overlay(
-                                Circle()
-                                    .stroke(Color.white.opacity(0.22), lineWidth: 1)
-                            )
+                    HStack(spacing: 8) {
+                        Button {
+                            Task { await viewModel.focusSelectedVMWindow() }
+                        } label: {
+                            Image(systemName: "macwindow.badge.plus")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 30, height: 30)
+                                .background(Color.green.opacity(0.88), in: Circle())
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(viewModel.isWorking || !viewModel.selectedVMCanFocusTrackedWindow)
+                        .help("Focus VM window")
+
+                        Button {
+                            viewModel.prepareEditSheet()
+                        } label: {
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 13, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 30, height: 30)
+                                .background(Color.accentColor, in: Circle())
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                                )
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(viewModel.isWorking || !viewModel.selectedVMCanEditSettings)
+                        .help(vm.running ? "Stop the VM to edit settings" : "Edit VM settings")
                     }
-                    .buttonStyle(.plain)
-                    .disabled(viewModel.isWorking || !viewModel.selectedVMCanEditSettings)
-                    .help(vm.running ? "Stop the VM to edit settings" : "Edit VM settings")
                 }
                 Text(vm.stateLabel.capitalized)
                     .font(.headline)
@@ -272,11 +291,6 @@ struct ContentView: View {
                     Task { await viewModel.runVM(mode: .headless) }
                 }
                 .disabled(viewModel.isWorking)
-
-                Button("Focus Window") {
-                    Task { await viewModel.focusSelectedVMWindow() }
-                }
-                .disabled(!viewModel.selectedVMCanFocusTrackedWindow || viewModel.isWorking)
 
                 Button("Stop") {
                     Task { await viewModel.runAction(.stop) }
