@@ -252,14 +252,42 @@ final class TartDeskViewModel {
     }
 
     func updateSelectedVM() async {
-        guard !editForm.name.isEmpty else { return }
+        guard let vm = selectedVM else { return }
+        let trimmedName = editForm.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedName.isEmpty else {
+            errorMessage = "Name is required."
+            return
+        }
+
+        editForm.name = trimmedName
 
         isWorking = true
         defer { isWorking = false }
 
         do {
+            var commandMessages: [String] = []
+
+            if trimmedName != vm.name {
+                let renameResult = try await service.renameVM(from: vm.name, to: trimmedName)
+                let renameMessage = [renameResult.stdout, renameResult.stderr]
+                    .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }
+                    .joined(separator: "\n")
+                commandMessages.append(renameMessage.isEmpty ? "Renamed \(vm.name) to \(trimmedName)." : renameMessage)
+
+                if let trackedPID = launchedGraphicsPIDs.removeValue(forKey: vm.name) {
+                    launchedGraphicsPIDs[trimmedName] = trackedPID
+                }
+                selectedVMID = trimmedName
+            }
+
             let result = try await service.updateVM(editForm)
-            setCommandOutput(result, fallback: "Updated \(editForm.name).")
+            let updateMessage = [result.stdout, result.stderr]
+                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                .filter { !$0.isEmpty }
+                .joined(separator: "\n")
+            commandMessages.append(updateMessage.isEmpty ? "Updated \(editForm.name)." : updateMessage)
+            lastCommandOutput = commandMessages.joined(separator: "\n")
             isShowingEditSheet = false
             await refresh()
         } catch {

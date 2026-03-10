@@ -608,8 +608,12 @@ private struct EditVMSheet: View {
             Text("Edit VM Settings")
                 .font(.system(size: 26, weight: .bold, design: .rounded))
 
-            LabeledContent("VM") {
-                Text(viewModel.editForm.name)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("VM Name")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                TextField("VM Name", text: $viewModel.editForm.name)
+                    .textFieldStyle(.roundedBorder)
             }
 
             Stepper(value: $viewModel.editForm.cpu, in: 1...16) {
@@ -651,7 +655,10 @@ private struct EditVMSheet: View {
                     Task { await viewModel.updateSelectedVM() }
                 }
                 .buttonStyle(.borderedProminent)
-                .disabled(viewModel.isWorking)
+                .disabled(
+                    viewModel.isWorking ||
+                    viewModel.editForm.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
             }
         }
         .padding(24)
