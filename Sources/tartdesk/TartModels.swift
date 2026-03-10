@@ -8,6 +8,7 @@ struct TartVM: Decodable, Identifiable, Hashable {
     let name: String
     let state: String
     let sizeOnDisk: Int
+    let accessed: String?
 
     var id: String { name }
     var isLocal: Bool { source.caseInsensitiveCompare("local") == .orderedSame }
@@ -34,6 +35,19 @@ struct TartVM: Decodable, Identifiable, Hashable {
         case name = "Name"
         case state = "State"
         case sizeOnDisk = "SizeOnDisk"
+        case accessed = "Accessed"
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        disk = try container.decode(Int.self, forKey: .disk)
+        size = try container.decode(Int.self, forKey: .size)
+        source = try container.decode(String.self, forKey: .source)
+        running = try container.decode(Bool.self, forKey: .running)
+        name = try container.decode(String.self, forKey: .name)
+        state = try container.decode(String.self, forKey: .state)
+        sizeOnDisk = try container.decodeIfPresent(Int.self, forKey: .sizeOnDisk) ?? size
+        accessed = try container.decodeIfPresent(String.self, forKey: .accessed)
     }
 }
 
@@ -46,6 +60,7 @@ struct TartVMDetails: Decodable, Hashable {
     let disk: Int
     let display: String
     let cpu: Int
+    let diskFormat: String?
 
     var memoryLabel: String { "\(memory) MB" }
     var diskLabel: String { "\(disk) GB" }
@@ -61,6 +76,7 @@ struct TartVMDetails: Decodable, Hashable {
         case disk = "Disk"
         case display = "Display"
         case cpu = "CPU"
+        case diskFormat = "DiskFormat"
     }
 }
 
