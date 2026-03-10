@@ -21,20 +21,26 @@ struct TartCLIService {
         try await run(arguments: action.commandArguments(for: name))
     }
 
-    func runVM(name: String, mode: TartRunMode) async throws {
+    func runVM(name: String, mode: TartRunMode) async throws -> pid_t {
         try launch(arguments: mode.commandArgumentsPrefix + [name])
     }
 
-    func focusVMWindow(name: String) throws {
-        guard AXIsProcessTrusted() else {
+    func focusVMWindow(name: String, preferredPID: pid_t? = nil) throws {
+        guard ensureAccessibilityPermission() else {
             throw TartCLIError.accessibilityPermissionRequired
         }
 
-        let pid = try findGraphicsRunProcessID(for: name)
+        let pid: pid_t
+        if let preferredPID {
+            pid = preferredPID
+        } else {
+            pid = try findGraphicsRunProcessID(for: name)
+        }
         guard let application = NSRunningApplication(processIdentifier: pid) else {
             throw TartCLIError.windowFocusFailed(name: name)
         }
 
+        application.unhide()
         let activated = application.activate(options: [.activateAllWindows])
         guard activated else {
             throw TartCLIError.windowFocusFailed(name: name)
@@ -50,20 +56,26 @@ struct TartCLIService {
             throw TartCLIError.windowFocusFailed(name: name)
         }
 
+        if preferredPID != nil, let firstWindow = windows.first {
+            try raiseWindow(firstWindow, name: name)
+            return
+        }
+
         for window in windows {
             guard let title = copyStringAttribute(kAXTitleAttribute, from: window) else { continue }
             guard title.localizedCaseInsensitiveContains(name) else { continue }
 
-            AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, truthy)
-            AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, truthy)
-            let raiseStatus = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-            guard raiseStatus == .success else {
-                throw TartCLIError.windowFocusFailed(name: name)
-            }
+            try raiseWindow(window, name: name)
             return
         }
 
-        throw TartCLIError.vmWindowNotFound(name: name)
+        if let firstWindow = windows.first {
+            try raiseWindow(firstWindow, name: name)
+            return
+        }
+
+        try bringProcessToFront(pid)
+        return
     }
 
     @discardableResult
@@ -110,11 +122,12 @@ struct TartCLIService {
         return TartCommandResult(stdout: stdout, stderr: stderr)
     }
 
-    func launch(arguments: [String]) throws {
+    func launch(arguments: [String]) throws -> pid_t {
         let process = configuredProcess(arguments: arguments)
         process.standardOutput = FileHandle.nullDevice
         process.standardError = FileHandle.nullDevice
         try process.run()
+        return process.processIdentifier
     }
 
     private func configuredProcess(arguments: [String]) -> Process {
@@ -175,6 +188,42 @@ struct TartCLIService {
         let status = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
         guard status == .success else { return nil }
         return value as? String
+    }
+
+    private func raiseWindow(_ window: AXUIElement, name: String) throws {
+        let truthy: CFTypeRef = kCFBooleanTrue
+        AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, truthy)
+        AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, truthy)
+        let raiseStatus = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+        guard raiseStatus == .success else {
+            throw TartCLIError.windowFocusFailed(name: name)
+        }
+    }
+
+    private func bringProcessToFront(_ pid: pid_t) throws {
+        let scriptSource = """
+        tell application "System Events"
+            set frontmost of first application process whose unix id is \(pid) to true
+        end tell
+        """
+
+        guard let script = NSAppleScript(source: scriptSource) else { return }
+
+        var error: NSDictionary?
+        script.executeAndReturnError(&error)
+        if error != nil {
+            throw TartCLIError.windowFocusFailed(name: "process \(pid)")
+        }
+    }
+
+    private func ensureAccessibilityPermission() -> Bool {
+        if AXIsProcessTrusted() {
+            return true
+        }
+
+        let promptKey = "AXTrustedCheckOptionPrompt"
+        let options = [promptKey: true] as CFDictionary
+        return AXIsProcessTrustedWithOptions(options)
     }
 }
 

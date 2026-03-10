@@ -17,6 +17,7 @@ final class TartDeskViewModel {
     var errorMessage: String?
     var lastCommandOutput = ""
     var selectedInfoMessage: String?
+    var launchedGraphicsPIDs: [String: pid_t] = [:]
 
     private let service = TartCLIService()
 
@@ -109,7 +110,10 @@ final class TartDeskViewModel {
         defer { isWorking = false }
 
         do {
-            try await service.runVM(name: vm.name, mode: mode)
+            let pid = try await service.runVM(name: vm.name, mode: mode)
+            if mode == .graphics {
+                launchedGraphicsPIDs[vm.name] = pid
+            }
             lastCommandOutput = "\(mode.title) started for \(vm.name)."
             try? await Task.sleep(for: .seconds(1))
             await refresh()
@@ -125,15 +129,13 @@ final class TartDeskViewModel {
             return
         }
 
-        isWorking = true
-        defer { isWorking = false }
-
         do {
             let service = self.service
             let vmName = vm.name
+            let preferredPID = launchedGraphicsPIDs[vm.name]
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask(priority: .userInitiated) {
-                    try service.focusVMWindow(name: vmName)
+                    try service.focusVMWindow(name: vmName, preferredPID: preferredPID)
                 }
                 group.addTask {
                     try await Task.sleep(for: .seconds(2))
