@@ -324,7 +324,35 @@ struct ContentView: View {
                     DetailCard(title: "Usage", value: details.sizeLabel)
                 }
             }
+
+            guestAgentCard
         }
+    }
+
+    private var guestAgentCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Guest Agent")
+                .font(.headline)
+
+            if let capabilities = viewModel.tartCapabilities {
+                Text("Tart \(capabilities.version)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text("`tart exec`: \(capabilities.supportsExec ? "available" : "unavailable")")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            } else {
+                Text("Checking Tart CLI capabilities...")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(viewModel.guestAgentStatus.title)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundStyle(slate900)
+        }
+        .padding(16)
+        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18))
     }
 
     private var commandOutput: some View {
@@ -364,8 +392,11 @@ private struct VMRow: View {
                     .foregroundStyle(slate900)
                 Spacer()
                 Text(vm.stateLabel.capitalized)
-                    .font(.caption)
-                    .foregroundStyle(vm.running ? .green : .secondary)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(stateForegroundColor)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(stateBackgroundColor, in: Capsule())
             }
 
             HStack(spacing: 12) {
@@ -390,6 +421,22 @@ private struct VMRow: View {
                     lineWidth: 1
                 )
         )
+    }
+
+    private var stateForegroundColor: Color {
+        if vm.running { return Color(red: 0.05, green: 0.45, blue: 0.20) }
+        if vm.state.caseInsensitiveCompare("suspended") == .orderedSame {
+            return Color(red: 0.70, green: 0.38, blue: 0.02)
+        }
+        return Color(red: 0.26, green: 0.31, blue: 0.39)
+    }
+
+    private var stateBackgroundColor: Color {
+        if vm.running { return Color.green.opacity(0.16) }
+        if vm.state.caseInsensitiveCompare("suspended") == .orderedSame {
+            return Color.orange.opacity(0.18)
+        }
+        return Color.black.opacity(0.07)
     }
 }
 

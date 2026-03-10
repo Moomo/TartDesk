@@ -5,6 +5,16 @@ import Foundation
 struct TartCLIService {
     private let decoder = JSONDecoder()
 
+    func detectCapabilities() async throws -> TartCapabilities {
+        async let versionResult = run(arguments: ["--version"])
+        async let helpResult = run(arguments: ["--help"])
+        let (version, help) = try await (versionResult, helpResult)
+        return TartCapabilities(
+            version: version.stdout.trimmingCharacters(in: .whitespacesAndNewlines),
+            supportsExec: help.stdout.contains("exec")
+        )
+    }
+
     func fetchVMs() async throws -> [TartVM] {
         let result = try await run(arguments: ["list", "--format", "json"])
         return try decoder.decode([TartVM].self, from: Data(result.stdout.utf8))
@@ -107,6 +117,18 @@ struct TartCLIService {
             "--display", form.display,
             "--disk-size", String(form.diskSize)
         ])
+    }
+
+    func probeGuestAgentAvailability(for name: String) async throws -> Bool {
+        do {
+            _ = try await run(arguments: ["exec", name, "/usr/bin/true"])
+            return true
+        } catch {
+            if let cliError = error as? TartCLIError {
+                throw cliError
+            }
+            throw error
+        }
     }
 
     @discardableResult

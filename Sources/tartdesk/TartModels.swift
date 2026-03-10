@@ -189,3 +189,32 @@ struct EditVMFormState {
         "\(displayWidth)x\(displayHeight)"
     }
 }
+
+struct TartCapabilities: Hashable {
+    let version: String
+    let supportsExec: Bool
+
+    var clipboardSummary: String {
+        supportsExec ? "Available via Guest Agent capable Tart builds" : "Unavailable in this Tart CLI build"
+    }
+}
+
+enum GuestAgentStatus: Hashable {
+    case unknown(String)
+    case unsupportedCLI
+    case notLocalVM
+    case vmStopped
+    case available
+    case unavailable(String)
+
+    var title: String {
+        switch self {
+        case let .unknown(message): message
+        case .unsupportedCLI: "This Tart CLI does not support `tart exec`."
+        case .notLocalVM: "Guest Agent applies only to local running VMs."
+        case .vmStopped: "Start the VM to probe Guest Agent and `tart exec`."
+        case .available: "Guest Agent available. `tart exec` should work for this VM."
+        case let .unavailable(message): message
+        }
+    }
+}

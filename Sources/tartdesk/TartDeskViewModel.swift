@@ -19,6 +19,8 @@ final class TartDeskViewModel {
     var lastCommandOutput = ""
     var selectedInfoMessage: String?
     var launchedGraphicsPIDs: [String: pid_t] = [:]
+    var tartCapabilities: TartCapabilities?
+    var guestAgentStatus: GuestAgentStatus = .unknown("Checking Tart capabilities...")
 
     private let service = TartCLIService()
 
@@ -75,7 +77,17 @@ final class TartDeskViewModel {
 
     func loadInitialData() async {
         if vms.isEmpty {
+            await loadCapabilities()
             await refresh()
+        }
+    }
+
+    func loadCapabilities() async {
+        do {
+            tartCapabilities = try await service.detectCapabilities()
+            updateGuestAgentStatus()
+        } catch {
+            present(error)
         }
     }
 
@@ -92,6 +104,7 @@ final class TartDeskViewModel {
             } else {
                 details = nil
                 selectedInfoMessage = nil
+                guestAgentStatus = .unknown("Select a VM to inspect Guest Agent support.")
             }
         } catch {
             present(error)
@@ -108,6 +121,7 @@ final class TartDeskViewModel {
 
         do {
             try await loadDetails(for: vm)
+            await probeGuestAgentIfNeeded(for: vm)
         } catch {
             present(error)
         }
@@ -149,6 +163,7 @@ final class TartDeskViewModel {
             lastCommandOutput = "\(mode.title) started for \(vm.name)."
             try? await Task.sleep(for: .seconds(1))
             await refresh()
+            await probeGuestAgentIfNeeded(for: vm)
         } catch {
             present(error)
         }
@@ -266,6 +281,7 @@ final class TartDeskViewModel {
         guard vm.isLocal else {
             details = nil
             selectedInfoMessage = "OCI images do not support `tart get`. Clone this image to create a local VM, then inspect and run it."
+            guestAgentStatus = .notLocalVM
             return
         }
 
@@ -281,6 +297,7 @@ final class TartDeskViewModel {
         } else {
             selectedInfoMessage = nil
         }
+        updateGuestAgentStatus()
     }
 
     private func setCommandOutput(_ result: TartCommandResult, fallback: String) {
@@ -316,5 +333,58 @@ final class TartDeskViewModel {
 
     private func present(_ error: Error) {
         errorMessage = error.localizedDescription
+    }
+
+    private func updateGuestAgentStatus() {
+        guard let vm = selectedVM else {
+            guestAgentStatus = .unknown("Select a VM to inspect Guest Agent support.")
+            return
+        }
+        guard vm.isLocal else {
+            guestAgentStatus = .notLocalVM
+            return
+        }
+        guard let capabilities = tartCapabilities else {
+            guestAgentStatus = .unknown("Checking Tart capabilities...")
+            return
+        }
+        guard capabilities.supportsExec else {
+            guestAgentStatus = .unsupportedCLI
+            return
+        }
+        guard vm.running else {
+            guestAgentStatus = .vmStopped
+            return
+        }
+        guestAgentStatus = .unknown("Probing Guest Agent with `tart exec`...")
+    }
+
+    private func probeGuestAgentIfNeeded(for vm: TartVM) async {
+        guard vm.isLocal else {
+            guestAgentStatus = .notLocalVM
+            return
+        }
+        guard let capabilities = tartCapabilities else {
+            guestAgentStatus = .unknown("Checking Tart capabilities...")
+            return
+        }
+        guard capabilities.supportsExec else {
+            guestAgentStatus = .unsupportedCLI
+            return
+        }
+        guard vm.running else {
+            guestAgentStatus = .vmStopped
+            return
+        }
+
+        guestAgentStatus = .unknown("Probing Guest Agent with `tart exec`...")
+        do {
+            let available = try await service.probeGuestAgentAvailability(for: vm.name)
+            guestAgentStatus = available
+                ? .available
+                : .unavailable("Guest Agent probe failed for \(vm.name).")
+        } catch {
+            guestAgentStatus = .unavailable(error.localizedDescription)
+        }
     }
 }
