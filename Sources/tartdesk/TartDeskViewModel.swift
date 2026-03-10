@@ -115,7 +115,7 @@ final class TartDeskViewModel {
             selectedVMID = selectedVMID ?? vms.first?.id
             if let vm = selectedVM {
                 try await loadDetails(for: vm)
-                await loadSSHStatus(for: vm)
+                scheduleRuntimeStatusRefresh(for: vm)
             } else {
                 details = nil
                 selectedInfoMessage = nil
@@ -137,8 +137,7 @@ final class TartDeskViewModel {
 
         do {
             try await loadDetails(for: vm)
-            await loadSSHStatus(for: vm)
-            await probeGuestAgentIfNeeded(for: vm)
+            scheduleRuntimeStatusRefresh(for: vm)
         } catch {
             present(error)
         }
@@ -180,8 +179,6 @@ final class TartDeskViewModel {
             lastCommandOutput = "\(mode.title) started for \(vm.name)."
             try? await Task.sleep(for: .seconds(1))
             await refresh()
-            await probeGuestAgentIfNeeded(for: vm)
-            await loadSSHStatus(for: vm)
         } catch {
             present(error)
         }
@@ -397,6 +394,16 @@ final class TartDeskViewModel {
             return
         }
         guestAgentStatus = .unknown("Probing Guest Agent with `tart exec`...")
+    }
+
+    private func scheduleRuntimeStatusRefresh(for vm: TartVM) {
+        let vmID = vm.id
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            await self.loadSSHStatus(for: vm)
+            guard self.selectedVM?.id == vmID else { return }
+            await self.probeGuestAgentIfNeeded(for: vm)
+        }
     }
 
     private func loadSSHStatus(for vm: TartVM) async {
