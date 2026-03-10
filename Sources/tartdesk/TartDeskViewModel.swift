@@ -21,8 +21,21 @@ final class TartDeskViewModel {
 
     private let service = TartCLIService()
 
+    private var deduplicatedVMs: [TartVM] {
+        let taggedOCIRepositories = Set(
+            vms
+                .filter { !$0.isLocal && !$0.isDigestReference }
+                .map(\.repositoryNameWithoutReference)
+        )
+
+        return vms.filter { vm in
+            guard !vm.isLocal, vm.isDigestReference else { return true }
+            return !taggedOCIRepositories.contains(vm.repositoryNameWithoutReference)
+        }
+    }
+
     var filteredVMs: [TartVM] {
-        vms.filter { vm in
+        deduplicatedVMs.filter { vm in
             sourceFilter.matches(vm) &&
             (searchText.isEmpty || vm.name.localizedCaseInsensitiveContains(searchText))
         }

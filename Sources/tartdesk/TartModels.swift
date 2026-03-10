@@ -15,6 +15,16 @@ struct TartVM: Decodable, Identifiable, Hashable {
     var stateLabel: String { running ? "running" : state }
     var displaySize: String { "\(sizeOnDisk) GB" }
     var displayDisk: String { "\(disk) GB" }
+    var isDigestReference: Bool { name.contains("@sha256:") }
+    var repositoryNameWithoutReference: String {
+        let withoutDigest = name.split(separator: "@", maxSplits: 1).first.map(String.init) ?? name
+        let lastSlashIndex = withoutDigest.lastIndex(of: "/")
+        let lastColonIndex = withoutDigest.lastIndex(of: ":")
+        if let colon = lastColonIndex, lastSlashIndex == nil || colon > lastSlashIndex! {
+            return String(withoutDigest[..<colon])
+        }
+        return withoutDigest
+    }
 
     enum CodingKeys: String, CodingKey {
         case disk = "Disk"
