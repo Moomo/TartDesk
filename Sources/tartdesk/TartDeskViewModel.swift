@@ -109,9 +109,41 @@ final class TartDeskViewModel {
         defer { isWorking = false }
 
         do {
-            let result = try await service.runVM(name: vm.name, mode: mode)
-            setCommandOutput(result, fallback: "\(mode.title) started for \(vm.name).")
+            try await service.runVM(name: vm.name, mode: mode)
+            lastCommandOutput = "\(mode.title) started for \(vm.name)."
+            try? await Task.sleep(for: .seconds(1))
             await refresh()
+        } catch {
+            present(error)
+        }
+    }
+
+    func focusSelectedVMWindow() async {
+        guard let vm = selectedVM else { return }
+        guard vm.isLocal else {
+            selectedInfoMessage = "Window focus is only available for local VMs."
+            return
+        }
+
+        isWorking = true
+        defer { isWorking = false }
+
+        do {
+            let service = self.service
+            let vmName = vm.name
+            try await withThrowingTaskGroup(of: Void.self) { group in
+                group.addTask(priority: .userInitiated) {
+                    try service.focusVMWindow(name: vmName)
+                }
+                group.addTask {
+                    try await Task.sleep(for: .seconds(2))
+                    throw TartCLIError.windowFocusTimedOut(name: vmName)
+                }
+
+                try await group.next()
+                group.cancelAll()
+            }
+            lastCommandOutput = "Focused window for \(vm.name)."
         } catch {
             present(error)
         }

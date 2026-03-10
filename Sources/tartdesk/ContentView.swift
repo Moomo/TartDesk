@@ -242,6 +242,11 @@ struct ContentView: View {
             }
             .disabled(!viewModel.selectedVMCanRun || viewModel.isWorking)
 
+            Button("Focus Window") {
+                Task { await viewModel.focusSelectedVMWindow() }
+            }
+            .disabled(!viewModel.selectedVMCanRun || !vm.running || viewModel.isWorking)
+
             Button("Stop") {
                 Task { await viewModel.runAction(.stop) }
             }
