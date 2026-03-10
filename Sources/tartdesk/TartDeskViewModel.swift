@@ -41,6 +41,16 @@ final class TartDeskViewModel {
         selectedVM?.isLocal == true
     }
 
+    var selectedVMCanFocusTrackedWindow: Bool {
+        guard let vm = selectedVM else { return false }
+        return vm.running && launchedGraphicsPIDs[vm.name] != nil
+    }
+
+    var selectedVMCanCreateLocalClone: Bool {
+        guard let vm = selectedVM else { return false }
+        return !vm.isLocal
+    }
+
     func loadInitialData() async {
         if vms.isEmpty {
             await refresh()
@@ -128,11 +138,14 @@ final class TartDeskViewModel {
             selectedInfoMessage = "Window focus is only available for local VMs."
             return
         }
+        guard let preferredPID = launchedGraphicsPIDs[vm.name] else {
+            selectedInfoMessage = "Focus Window works only for VMs started with TartDesk's `Run` button in this session."
+            return
+        }
 
         do {
             let service = self.service
             let vmName = vm.name
-            let preferredPID = launchedGraphicsPIDs[vm.name]
             try await withThrowingTaskGroup(of: Void.self) { group in
                 group.addTask(priority: .userInitiated) {
                     try service.focusVMWindow(name: vmName, preferredPID: preferredPID)
@@ -183,6 +196,17 @@ final class TartDeskViewModel {
         isShowingCreateSheet = true
     }
 
+    func prepareCloneFromSelectedVM() {
+        guard let selectedVM else { return }
+        createForm = CreateVMFormState()
+        createForm.creationMode = .clone
+        createForm.sourceName = selectedVM.name
+        if !selectedVM.isLocal {
+            createForm.name = suggestedCloneName(for: selectedVM.name)
+        }
+        isShowingCreateSheet = true
+    }
+
     func dismissError() {
         errorMessage = nil
     }
@@ -195,7 +219,11 @@ final class TartDeskViewModel {
         }
 
         details = try await service.fetchDetails(for: vm.name)
-        selectedInfoMessage = nil
+        if vm.running && launchedGraphicsPIDs[vm.name] == nil {
+            selectedInfoMessage = "Focus Window works only for VMs started with TartDesk's `Run` button in this session."
+        } else {
+            selectedInfoMessage = nil
+        }
     }
 
     private func setCommandOutput(_ result: TartCommandResult, fallback: String) {
@@ -208,6 +236,15 @@ final class TartDeskViewModel {
 
     private func resetCreateForm() {
         createForm = CreateVMFormState()
+    }
+
+    private func suggestedCloneName(for sourceName: String) -> String {
+        let lastComponent = sourceName.split(separator: "/").last.map(String.init) ?? sourceName
+        let sanitized = lastComponent
+            .replacingOccurrences(of: ":latest", with: "")
+            .replacingOccurrences(of: "@", with: "-")
+            .replacingOccurrences(of: ":", with: "-")
+        return sanitized
     }
 
     private func present(_ error: Error) {

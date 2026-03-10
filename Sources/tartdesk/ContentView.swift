@@ -231,36 +231,44 @@ struct ContentView: View {
 
     private func actionBar(for vm: TartVM) -> some View {
         HStack(spacing: 10) {
-            Button("Run") {
-                Task { await viewModel.runVM(mode: .graphics) }
-            }
-            .buttonStyle(.borderedProminent)
-            .disabled(!viewModel.selectedVMCanRun || viewModel.isWorking)
+            if vm.isLocal {
+                Button("Run") {
+                    Task { await viewModel.runVM(mode: .graphics) }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.isWorking)
 
-            Button("Run Headless") {
-                Task { await viewModel.runVM(mode: .headless) }
-            }
-            .disabled(!viewModel.selectedVMCanRun || viewModel.isWorking)
+                Button("Run Headless") {
+                    Task { await viewModel.runVM(mode: .headless) }
+                }
+                .disabled(viewModel.isWorking)
 
-            Button("Focus Window") {
-                Task { await viewModel.focusSelectedVMWindow() }
-            }
-            .disabled(!viewModel.selectedVMCanRun || !vm.running || viewModel.isWorking)
+                Button("Focus Window") {
+                    Task { await viewModel.focusSelectedVMWindow() }
+                }
+                .disabled(!viewModel.selectedVMCanFocusTrackedWindow || viewModel.isWorking)
 
-            Button("Stop") {
-                Task { await viewModel.runAction(.stop) }
-            }
-            .disabled(!viewModel.selectedVMCanRun || !vm.running || viewModel.isWorking)
+                Button("Stop") {
+                    Task { await viewModel.runAction(.stop) }
+                }
+                .disabled(!vm.running || viewModel.isWorking)
 
-            Button("Suspend") {
-                Task { await viewModel.runAction(.suspend) }
-            }
-            .disabled(!viewModel.selectedVMCanRun || !vm.running || viewModel.isWorking)
+                Button("Suspend") {
+                    Task { await viewModel.runAction(.suspend) }
+                }
+                .disabled(!vm.running || viewModel.isWorking)
 
-            Button("Delete", role: .destructive) {
-                Task { await viewModel.runAction(.delete) }
+                Button("Delete", role: .destructive) {
+                    Task { await viewModel.runAction(.delete) }
+                }
+                .disabled(viewModel.isWorking)
+            } else {
+                Button("Create Local VM") {
+                    viewModel.prepareCloneFromSelectedVM()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(!viewModel.selectedVMCanCreateLocalClone || viewModel.isWorking)
             }
-            .disabled(!viewModel.selectedVMCanRun || viewModel.isWorking)
 
             Spacer()
         }
