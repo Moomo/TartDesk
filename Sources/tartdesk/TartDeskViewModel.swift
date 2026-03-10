@@ -68,6 +68,11 @@ final class TartDeskViewModel {
         return !vm.isLocal
     }
 
+    var selectedVMCanEditSettings: Bool {
+        guard let vm = selectedVM else { return false }
+        return vm.isLocal && !vm.running && details != nil
+    }
+
     func loadInitialData() async {
         if vms.isEmpty {
             await refresh()
@@ -265,8 +270,14 @@ final class TartDeskViewModel {
         }
 
         details = try await service.fetchDetails(for: vm.name)
-        if vm.running && launchedGraphicsPIDs[vm.name] == nil {
-            selectedInfoMessage = "Focus Window works only for VMs started with TartDesk's `Run` button in this session."
+        if vm.running {
+            if launchedGraphicsPIDs[vm.name] == nil {
+                selectedInfoMessage = "Focus Window works only for VMs started with TartDesk's `Run` button in this session."
+            } else {
+                selectedInfoMessage = "Stop the VM before editing CPU, memory, display, or disk settings."
+            }
+        } else if launchedGraphicsPIDs[vm.name] == nil {
+            selectedInfoMessage = nil
         } else {
             selectedInfoMessage = nil
         }

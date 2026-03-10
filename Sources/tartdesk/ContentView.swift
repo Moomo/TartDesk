@@ -224,6 +224,24 @@ struct ContentView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
+                if vm.isLocal {
+                    Button {
+                        viewModel.prepareEditSheet()
+                    } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 30, height: 30)
+                            .background(Color.accentColor, in: Circle())
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.22), lineWidth: 1)
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(viewModel.isWorking || !viewModel.selectedVMCanEditSettings)
+                    .help(vm.running ? "Stop the VM to edit settings" : "Edit VM settings")
+                }
                 Text(vm.stateLabel.capitalized)
                     .font(.headline)
                     .padding(.horizontal, 12)
@@ -244,11 +262,6 @@ struct ContentView: View {
     private func actionBar(for vm: TartVM) -> some View {
         HStack(spacing: 10) {
             if vm.isLocal {
-                Button("Edit Settings") {
-                    viewModel.prepareEditSheet()
-                }
-                .disabled(viewModel.isWorking || viewModel.details == nil)
-
                 Button("Run") {
                     Task { await viewModel.runVM(mode: .graphics) }
                 }
