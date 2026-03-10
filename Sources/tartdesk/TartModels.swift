@@ -160,3 +160,16 @@ struct CreateVMFormState {
         }
     }
 }
+
+struct EditVMFormState {
+    var name = ""
+    var cpu = 4
+    var memory = 8192
+    var diskSize = 50
+    var displayWidth = 1024
+    var displayHeight = 768
+
+    var display: String {
+        "\(displayWidth)x\(displayHeight)"
+    }
+}

@@ -8,6 +8,7 @@ private let sidebarSurface = Color(red: 0.83, green: 0.89, blue: 0.96)
 
 struct ContentView: View {
     @Bindable var viewModel: TartDeskViewModel
+    @State private var isShowingDeleteConfirmation = false
 
     var body: some View {
         NavigationSplitView {
@@ -43,6 +44,21 @@ struct ContentView: View {
         .sheet(isPresented: $viewModel.isShowingCreateSheet) {
             CreateVMSheet(viewModel: viewModel)
         }
+        .sheet(isPresented: $viewModel.isShowingEditSheet) {
+            EditVMSheet(viewModel: viewModel)
+        }
+        .confirmationDialog(
+            "Delete VM?",
+            isPresented: $isShowingDeleteConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                Task { await viewModel.runAction(.delete) }
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This will permanently delete the selected local VM.")
+        }
         .alert(
             "Tart Error",
             isPresented: Binding(
@@ -76,11 +92,6 @@ struct ContentView: View {
 
             sourceFilterTabs
 
-            TextField("Search VM names", text: $viewModel.searchText)
-                .textFieldStyle(.roundedBorder)
-                .padding(10)
-                .background(.white, in: RoundedRectangle(cornerRadius: 18))
-
             statsCard
 
             Spacer()
@@ -107,6 +118,7 @@ struct ContentView: View {
                                 : Color.clear,
                             in: RoundedRectangle(cornerRadius: 12)
                         )
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
             }
@@ -139,7 +151,7 @@ struct ContentView: View {
                 ContentUnavailableView(
                     "No Matching VMs",
                     systemImage: "externaldrive.badge.questionmark",
-                    description: Text("Try another filter or create a new instance.")
+                    description: Text("Try another source filter or create a new instance.")
                 )
             }
         }
@@ -232,6 +244,11 @@ struct ContentView: View {
     private func actionBar(for vm: TartVM) -> some View {
         HStack(spacing: 10) {
             if vm.isLocal {
+                Button("Edit Settings") {
+                    viewModel.prepareEditSheet()
+                }
+                .disabled(viewModel.isWorking || viewModel.details == nil)
+
                 Button("Run") {
                     Task { await viewModel.runVM(mode: .graphics) }
                 }
@@ -259,7 +276,7 @@ struct ContentView: View {
                 .disabled(!vm.running || viewModel.isWorking)
 
                 Button("Delete", role: .destructive) {
-                    Task { await viewModel.runAction(.delete) }
+                    isShowingDeleteConfirmation = true
                 }
                 .disabled(viewModel.isWorking)
             } else {
@@ -401,7 +418,7 @@ private struct CreateVMSheet: View {
 
             if viewModel.createForm.creationMode == .clone {
                 Picker("Source VM", selection: $viewModel.createForm.sourceName) {
-                    ForEach(viewModel.vms, id: \.name) { vm in
+                    ForEach(viewModel.cloneSourceCandidates, id: \.name) { vm in
                         Text(vm.name).tag(vm.name)
                     }
                 }
@@ -427,6 +444,66 @@ private struct CreateVMSheet: View {
                     (viewModel.createForm.creationMode == .clone && !viewModel.canCreateFromClone) ||
                     viewModel.isWorking
                 )
+            }
+        }
+        .padding(24)
+        .frame(width: 460)
+    }
+}
+
+private struct EditVMSheet: View {
+    @Bindable var viewModel: TartDeskViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Edit VM Settings")
+                .font(.system(size: 26, weight: .bold, design: .rounded))
+
+            LabeledContent("VM") {
+                Text(viewModel.editForm.name)
+            }
+
+            Stepper(value: $viewModel.editForm.cpu, in: 1...16) {
+                Text("CPU: \(viewModel.editForm.cpu)")
+            }
+
+            Stepper(value: $viewModel.editForm.memory, in: 1024...65536, step: 1024) {
+                Text("Memory: \(viewModel.editForm.memory) MB")
+            }
+
+            Stepper(value: $viewModel.editForm.diskSize, in: 10...1000, step: 10) {
+                Text("Disk Size: \(viewModel.editForm.diskSize) GB")
+            }
+
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Display Width")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Width", value: $viewModel.editForm.displayWidth, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Display Height")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    TextField("Height", value: $viewModel.editForm.displayHeight, format: .number)
+                        .textFieldStyle(.roundedBorder)
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    dismiss()
+                }
+                Button("Save") {
+                    Task { await viewModel.updateSelectedVM() }
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.isWorking)
             }
         }
         .padding(24)

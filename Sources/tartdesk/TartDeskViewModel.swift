@@ -9,11 +9,12 @@ final class TartDeskViewModel {
     var selectedVMID: TartVM.ID?
     var details: TartVMDetails?
     var sourceFilter: TartSourceFilter = .all
-    var searchText = ""
     var isLoading = false
     var isWorking = false
     var isShowingCreateSheet = false
+    var isShowingEditSheet = false
     var createForm = CreateVMFormState()
+    var editForm = EditVMFormState()
     var errorMessage: String?
     var lastCommandOutput = ""
     var selectedInfoMessage: String?
@@ -36,9 +37,12 @@ final class TartDeskViewModel {
 
     var filteredVMs: [TartVM] {
         deduplicatedVMs.filter { vm in
-            sourceFilter.matches(vm) &&
-            (searchText.isEmpty || vm.name.localizedCaseInsensitiveContains(searchText))
+            sourceFilter.matches(vm)
         }
+    }
+
+    var cloneSourceCandidates: [TartVM] {
+        deduplicatedVMs
     }
 
     var selectedVM: TartVM? {
@@ -199,6 +203,35 @@ final class TartDeskViewModel {
         }
     }
 
+    func prepareEditSheet() {
+        guard let vm = selectedVM, vm.isLocal, let details else { return }
+        editForm = EditVMFormState(
+            name: vm.name,
+            cpu: details.cpu,
+            memory: details.memory,
+            diskSize: details.disk,
+            displayWidth: parseDisplay(details.display).width,
+            displayHeight: parseDisplay(details.display).height
+        )
+        isShowingEditSheet = true
+    }
+
+    func updateSelectedVM() async {
+        guard !editForm.name.isEmpty else { return }
+
+        isWorking = true
+        defer { isWorking = false }
+
+        do {
+            let result = try await service.updateVM(editForm)
+            setCommandOutput(result, fallback: "Updated \(editForm.name).")
+            isShowingEditSheet = false
+            await refresh()
+        } catch {
+            present(error)
+        }
+    }
+
     func prepareCreateSheet() {
         createForm = CreateVMFormState()
         if let selectedVM {
@@ -258,6 +291,16 @@ final class TartDeskViewModel {
             .replacingOccurrences(of: "@", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         return sanitized
+    }
+
+    private func parseDisplay(_ display: String) -> (width: Int, height: Int) {
+        let parts = display.split(separator: "x")
+        guard parts.count == 2,
+              let width = Int(parts[0]),
+              let height = Int(parts[1]) else {
+            return (1024, 768)
+        }
+        return (width, height)
     }
 
     private func present(_ error: Error) {

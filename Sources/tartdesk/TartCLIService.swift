@@ -98,6 +98,18 @@ struct TartCLIService {
     }
 
     @discardableResult
+    func updateVM(_ form: EditVMFormState) async throws -> TartCommandResult {
+        try await run(arguments: [
+            "set",
+            form.name,
+            "--cpu", String(form.cpu),
+            "--memory", String(form.memory),
+            "--display", form.display,
+            "--disk-size", String(form.diskSize)
+        ])
+    }
+
+    @discardableResult
     func run(arguments: [String]) async throws -> TartCommandResult {
         let process = configuredProcess(arguments: arguments)
         let stdoutPipe = Pipe()
