@@ -3,36 +3,21 @@ import SwiftUI
 
 @main
 struct TartDeskApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
     @State private var model = TartDeskViewModel()
 
     var body: some Scene {
         WindowGroup {
             ContentView(viewModel: model)
                 .frame(minWidth: 1080, minHeight: 720)
-                .background(WindowConfigurator())
-        }
-    }
-}
-
-private struct WindowConfigurator: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSView {
-        let view = NSView()
-        DispatchQueue.main.async {
-            guard let window = view.window else { return }
-            configure(window)
-        }
-        return view
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        DispatchQueue.main.async {
-            guard let window = nsView.window else { return }
-            configure(window)
+                .onAppear {
+                    configureMainWindow()
+                }
         }
     }
 
-    private func configure(_ window: NSWindow) {
-        window.minSize = NSSize(width: 1080, height: 720)
+    private func configureMainWindow() {
+        guard let window = NSApp.windows.first else { return }
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.collectionBehavior.remove(.fullScreenAuxiliary)
         window.tabbingMode = .preferred
@@ -41,5 +26,15 @@ private struct WindowConfigurator: NSViewRepresentable {
         window.backgroundColor = .windowBackgroundColor
         window.standardWindowButton(.zoomButton)?.isEnabled = true
         window.standardWindowButton(.miniaturizeButton)?.isEnabled = true
+    }
+}
+
+final class AppDelegate: NSObject, NSApplicationDelegate {
+    func applicationWillFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.regular)
+    }
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.activate(ignoringOtherApps: true)
     }
 }
