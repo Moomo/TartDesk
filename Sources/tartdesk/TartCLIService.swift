@@ -297,12 +297,25 @@ struct TartCLIService {
         return value as? String
     }
 
+    private func copyBoolAttribute(_ attribute: String, from element: AXUIElement) -> Bool? {
+        var value: CFTypeRef?
+        let status = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        guard status == .success else { return nil }
+        return (value as? Bool) ?? ((value as? NSNumber)?.boolValue)
+    }
+
     private func raiseWindow(_ window: AXUIElement, name: String) throws {
         let truthy: CFTypeRef = kCFBooleanTrue
         AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, truthy)
         AXUIElementSetAttributeValue(window, kAXFocusedAttribute as CFString, truthy)
         let raiseStatus = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
-        guard raiseStatus == .success else {
+        if raiseStatus == .success {
+            return
+        }
+
+        let isMain = copyBoolAttribute(kAXMainAttribute, from: window) ?? false
+        let isFocused = copyBoolAttribute(kAXFocusedAttribute, from: window) ?? false
+        guard isMain || isFocused else {
             throw TartCLIError.windowFocusFailed(name: name)
         }
     }
