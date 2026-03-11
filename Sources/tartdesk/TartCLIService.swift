@@ -86,8 +86,11 @@ struct TartCLIService {
 
         var value: CFTypeRef?
         let status = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &value)
-        guard status == .success, let windows = value as? [AXUIElement] else {
-            throw TartCLIError.windowFocusFailed(name: name)
+        guard status == .success else {
+            return
+        }
+        guard let windows = value as? [AXUIElement] else {
+            return
         }
 
         if preferredPID != nil, let firstWindow = windows.first {
@@ -108,7 +111,6 @@ struct TartCLIService {
             return
         }
 
-        try bringProcessToFront(pid)
         return
     }
 
