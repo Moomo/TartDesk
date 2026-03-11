@@ -9,17 +9,30 @@ private let sidebarSurface = Color(red: 0.83, green: 0.89, blue: 0.96)
 struct ContentView: View {
     @Bindable var viewModel: TartDeskViewModel
     @State private var isShowingDeleteConfirmation = false
+    @State private var isSidebarVisible = true
+
+    private let sidebarWidth: CGFloat = 270
+    private let listWidth: CGFloat = 340
 
     var body: some View {
-        NavigationSplitView {
-            sidebar
-                .navigationSplitViewColumnWidth(min: 220, ideal: 270)
-        } content: {
+        HStack(spacing: 0) {
+            if isSidebarVisible {
+                sidebar
+                    .frame(width: sidebarWidth)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+
+                Divider()
+            }
+
             vmList
-        } detail: {
+                .frame(width: listWidth)
+
+            Divider()
+
             detailPanel
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationSplitViewStyle(.balanced)
+        .animation(.snappy(duration: 0.18, extraBounce: 0), value: isSidebarVisible)
         .task {
             await viewModel.loadInitialData()
         }
@@ -27,6 +40,12 @@ struct ContentView: View {
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
             ToolbarItemGroup {
+                Button {
+                    isSidebarVisible.toggle()
+                } label: {
+                    Label(isSidebarVisible ? "Hide Sidebar" : "Show Sidebar", systemImage: "sidebar.leading")
+                }
+
                 Button {
                     viewModel.prepareCreateSheet()
                 } label: {
@@ -42,6 +61,7 @@ struct ContentView: View {
                 .disabled(!viewModel.isTartAvailable || viewModel.isLoading || viewModel.isWorking)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .sheet(isPresented: $viewModel.isShowingCreateSheet) {
             CreateVMSheet(viewModel: viewModel)
         }
