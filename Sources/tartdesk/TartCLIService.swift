@@ -4,8 +4,19 @@ import Foundation
 
 struct TartCLIService {
     private let decoder = JSONDecoder()
+    private let knownExecutablePaths = [
+        "/opt/homebrew/bin/tart",
+        "/usr/local/bin/tart"
+    ]
+
+    func isTartInstalled() -> Bool {
+        tartExecutableURL() != nil
+    }
 
     func detectCapabilities() async throws -> TartCapabilities {
+        guard isTartInstalled() else {
+            throw TartCLIError.tartNotInstalled
+        }
         async let versionResult = run(arguments: ["--version"])
         async let helpResult = run(arguments: ["--help"])
         let (version, help) = try await (versionResult, helpResult)
@@ -193,15 +204,34 @@ struct TartCLIService {
     }
 
     private func configuredProcess(arguments: [String]) -> Process {
-        let executable = "/opt/homebrew/bin/tart"
         let process = Process()
-        process.executableURL = FileManager.default.fileExists(atPath: executable)
-            ? URL(fileURLWithPath: executable)
-            : URL(fileURLWithPath: "/usr/bin/env")
-        process.arguments = FileManager.default.fileExists(atPath: executable)
-            ? arguments
-            : ["tart"] + arguments
+        guard let executableURL = tartExecutableURL() else {
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/false")
+            process.arguments = []
+            return process
+        }
+        process.executableURL = executableURL
+        process.arguments = arguments
         return process
+    }
+
+    private func tartExecutableURL() -> URL? {
+        for path in knownExecutablePaths where FileManager.default.isExecutableFile(atPath: path) {
+            return URL(fileURLWithPath: path)
+        }
+
+        let pathEntries = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .split(separator: ":")
+            .map(String.init)
+
+        for entry in pathEntries {
+            let candidate = URL(fileURLWithPath: entry).appendingPathComponent("tart").path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return URL(fileURLWithPath: candidate)
+            }
+        }
+
+        return nil
     }
 
     private func findGraphicsRunProcessID(for name: String) throws -> pid_t {
@@ -290,6 +320,7 @@ struct TartCLIService {
 }
 
 enum TartCLIError: LocalizedError {
+    case tartNotInstalled
     case commandFailed(arguments: [String], exitCode: Int, stderr: String)
     case vmWindowNotFound(name: String)
     case windowFocusFailed(name: String)
@@ -300,6 +331,8 @@ enum TartCLIError: LocalizedError {
 
     var errorDescription: String? {
         switch self {
+        case .tartNotInstalled:
+            return "Tart is not installed. Install it first to use TartDesk."
         case let .commandFailed(arguments, exitCode, stderr):
             let message = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
             return "`tart \(arguments.joined(separator: " "))` failed with exit code \(exitCode).\n\(message)"

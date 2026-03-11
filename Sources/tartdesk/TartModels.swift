@@ -196,6 +196,26 @@ struct TartCapabilities: Hashable {
     }
 }
 
+enum TartInstallationStatus: Hashable {
+    case checking
+    case installed
+    case missing
+    case unavailable(String)
+
+    var message: String {
+        switch self {
+        case .checking:
+            return "Checking whether Tart is installed..."
+        case .installed:
+            return "Tart is installed."
+        case .missing:
+            return "Tart is not installed on this Mac."
+        case let .unavailable(message):
+            return message
+        }
+    }
+}
+
 enum SSHStatus: Hashable {
     case unavailable(String)
     case loading

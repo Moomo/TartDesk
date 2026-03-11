@@ -24,8 +24,10 @@ final class TartDeskViewModel {
     var guestAgentStatus: GuestAgentStatus = .unknown("Checking Tart capabilities...")
     var sshStatus: SSHStatus = .unavailable("Start a local VM to fetch its IP address.")
     var sshUsername = "admin"
+    var tartInstallationStatus: TartInstallationStatus = .checking
 
     private let service = TartCLIService()
+    private let tartInstallCommand = "brew install cirruslabs/cli/tart"
 
     private var deduplicatedVMs: [TartVM] {
         let taggedOCIRepositories = Set(
@@ -83,6 +85,10 @@ final class TartDeskViewModel {
         return vm.isLocal && vm.running && sshStatus.ipAddress != nil
     }
 
+    var isTartAvailable: Bool {
+        tartInstallationStatus == .installed
+    }
+
     var selectedVMSSHCommand: String? {
         guard let ipAddress = sshStatus.ipAddress else { return nil }
         let username = sshUsername.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -99,13 +105,26 @@ final class TartDeskViewModel {
     func loadCapabilities() async {
         do {
             tartCapabilities = try await service.detectCapabilities()
+            tartInstallationStatus = .installed
             updateGuestAgentStatus()
         } catch {
+            if case TartCLIError.tartNotInstalled = error {
+                tartInstallationStatus = .missing
+                vms = []
+                details = nil
+                selectedVMID = nil
+                selectedInfoMessage = nil
+                guestAgentStatus = .unknown("Install Tart to inspect Guest Agent support.")
+                sshStatus = .unavailable("Install Tart to enable SSH-related features.")
+                return
+            }
+            tartInstallationStatus = .unavailable(error.localizedDescription)
             present(error)
         }
     }
 
     func refresh() async {
+        guard isTartAvailable else { return }
         isLoading = true
         defer { isLoading = false }
 
@@ -128,6 +147,7 @@ final class TartDeskViewModel {
     }
 
     func selectVM(_ vm: TartVM?) async {
+        guard isTartAvailable else { return }
         selectedVMID = vm?.id
         guard let vm else {
             details = nil
@@ -144,6 +164,7 @@ final class TartDeskViewModel {
     }
 
     func runAction(_ action: TartAction) async {
+        guard isTartAvailable else { return }
         guard let vm = selectedVM else { return }
         guard vm.isLocal else {
             selectedInfoMessage = "Runtime actions are only available for local VMs. Clone this OCI image first."
@@ -162,6 +183,7 @@ final class TartDeskViewModel {
     }
 
     func runVM(mode: TartRunMode) async {
+        guard isTartAvailable else { return }
         guard let vm = selectedVM else { return }
         guard vm.isLocal else {
             selectedInfoMessage = "Runtime actions are only available for local VMs. Clone this OCI image first."
@@ -185,6 +207,7 @@ final class TartDeskViewModel {
     }
 
     func focusSelectedVMWindow() async {
+        guard isTartAvailable else { return }
         guard let vm = selectedVM else { return }
         guard vm.isLocal else {
             selectedInfoMessage = "Window focus is only available for local VMs."
@@ -217,6 +240,7 @@ final class TartDeskViewModel {
     }
 
     func createVM() async {
+        guard isTartAvailable else { return }
         let trimmedName = createForm.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             errorMessage = "Name is required."
@@ -239,6 +263,7 @@ final class TartDeskViewModel {
     }
 
     func prepareEditSheet() {
+        guard isTartAvailable else { return }
         guard let vm = selectedVM, vm.isLocal, let details else { return }
         editForm = EditVMFormState(
             name: vm.name,
@@ -252,6 +277,7 @@ final class TartDeskViewModel {
     }
 
     func updateSelectedVM() async {
+        guard isTartAvailable else { return }
         guard let vm = selectedVM else { return }
         let trimmedName = editForm.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
@@ -296,6 +322,7 @@ final class TartDeskViewModel {
     }
 
     func prepareCreateSheet() {
+        guard isTartAvailable else { return }
         createForm = CreateVMFormState()
         if let selectedVM {
             createForm.sourceName = selectedVM.name
@@ -306,6 +333,7 @@ final class TartDeskViewModel {
     }
 
     func prepareCloneFromSelectedVM() {
+        guard isTartAvailable else { return }
         guard let selectedVM else { return }
         createForm = CreateVMFormState()
         createForm.creationMode = .clone
@@ -318,6 +346,17 @@ final class TartDeskViewModel {
 
     func dismissError() {
         errorMessage = nil
+    }
+
+    func copyTartInstallCommand() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(tartInstallCommand, forType: .string)
+        lastCommandOutput = "Copied install command: \(tartInstallCommand)"
+    }
+
+    func openTartWebsite() {
+        guard let url = URL(string: "https://github.com/cirruslabs/tart") else { return }
+        NSWorkspace.shared.open(url)
     }
 
     func copySSHCommand() {

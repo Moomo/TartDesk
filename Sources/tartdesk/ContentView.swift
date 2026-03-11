@@ -32,13 +32,14 @@ struct ContentView: View {
                 } label: {
                     Label("Create", systemImage: "plus")
                 }
+                .disabled(!viewModel.isTartAvailable)
 
                 Button {
                     Task { await viewModel.refresh() }
                 } label: {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
-                .disabled(viewModel.isLoading || viewModel.isWorking)
+                .disabled(!viewModel.isTartAvailable || viewModel.isLoading || viewModel.isWorking)
             }
         }
         .sheet(isPresented: $viewModel.isShowingCreateSheet) {
@@ -147,7 +148,13 @@ struct ContentView: View {
         .padding(16)
         .background(surfaceBlue)
         .overlay {
-            if viewModel.filteredVMs.isEmpty && !viewModel.isLoading {
+            if !viewModel.isTartAvailable {
+                ContentUnavailableView(
+                    "Tart Not Available",
+                    systemImage: "shippingbox.circle",
+                    description: Text(viewModel.tartInstallationStatus.message)
+                )
+            } else if viewModel.filteredVMs.isEmpty && !viewModel.isLoading {
                 ContentUnavailableView(
                     "No Matching VMs",
                     systemImage: "externaldrive.badge.questionmark",
@@ -160,7 +167,9 @@ struct ContentView: View {
     private var detailPanel: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                if let vm = viewModel.selectedVM {
+                if !viewModel.isTartAvailable {
+                    tartInstallCard
+                } else if let vm = viewModel.selectedVM {
                     header(for: vm)
                     actionBar(for: vm)
                     detailsGrid
@@ -183,6 +192,41 @@ struct ContentView: View {
                     .padding()
             }
         }
+    }
+
+    private var tartInstallCard: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Label("Tart Required", systemImage: "shippingbox.circle.fill")
+                .font(.system(size: 28, weight: .bold, design: .rounded))
+                .foregroundStyle(slate900)
+
+            Text(viewModel.tartInstallationStatus.message)
+                .foregroundStyle(.secondary)
+
+            Text("Install command")
+                .font(.headline)
+
+            Text("brew install cirruslabs/cli/tart")
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .font(.system(.body, design: .monospaced))
+                .padding(12)
+                .background(Color(NSColor.textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+
+            HStack(spacing: 10) {
+                Button("Copy Install Command") {
+                    viewModel.copyTartInstallCommand()
+                }
+                .buttonStyle(.borderedProminent)
+
+                Button("Open Tart Website") {
+                    viewModel.openTartWebsite()
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 360, alignment: .topLeading)
+        .padding(24)
+        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 24))
     }
 
     private var statsCard: some View {
