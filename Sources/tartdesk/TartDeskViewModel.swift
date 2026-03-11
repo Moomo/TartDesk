@@ -16,6 +16,7 @@ final class TartDeskViewModel {
     var isShowingEditSheet = false
     var createForm = CreateVMFormState()
     var editForm = EditVMFormState()
+    var editDirectoryShares: [TartDirectoryShare] = []
     var errorMessage: String?
     var lastCommandOutput = ""
     var selectedInfoMessage: String?
@@ -28,6 +29,9 @@ final class TartDeskViewModel {
 
     private let service = TartCLIService()
     private let tartInstallCommand = "brew install cirruslabs/cli/tart"
+    private let sharedFoldersDefaultsKey = "vmSharedFolders"
+    private let sharedFoldersEncoder = JSONEncoder()
+    private let sharedFoldersDecoder = JSONDecoder()
 
     private var deduplicatedVMs: [TartVM] {
         let taggedOCIRepositories = Set(
@@ -182,7 +186,7 @@ final class TartDeskViewModel {
         }
     }
 
-    func runVM(mode: TartRunMode) async {
+    func runVM(mode: TartRunMode, directoryShares: [TartDirectoryShare]? = nil) async {
         guard isTartAvailable else { return }
         guard let vm = selectedVM else { return }
         guard vm.isLocal else {
@@ -190,15 +194,24 @@ final class TartDeskViewModel {
             return
         }
 
+        let effectiveDirectoryShares = directoryShares ?? sharedDirectoryShares(for: vm.name)
+
         isWorking = true
         defer { isWorking = false }
 
         do {
-            let pid = try await service.runVM(name: vm.name, mode: mode)
+            let pid = try await service.runVM(name: vm.name, mode: mode, directoryShares: effectiveDirectoryShares)
             if mode == .graphics {
                 launchedGraphicsPIDs[vm.name] = pid
             }
-            lastCommandOutput = "\(mode.title) started for \(vm.name)."
+            let shareSummary = effectiveDirectoryShares
+                .filter { !$0.trimmedPath.isEmpty }
+                .map(\.trimmedPath)
+            if shareSummary.isEmpty {
+                lastCommandOutput = "\(mode.title) started for \(vm.name)."
+            } else {
+                lastCommandOutput = "\(mode.title) started for \(vm.name) with shared folders:\n" + shareSummary.joined(separator: "\n")
+            }
             try? await Task.sleep(for: .seconds(1))
             await refresh()
         } catch {
@@ -273,6 +286,7 @@ final class TartDeskViewModel {
             displayWidth: parseDisplay(details.display).width,
             displayHeight: parseDisplay(details.display).height
         )
+        editDirectoryShares = sharedDirectoryShares(for: vm.name)
         isShowingEditSheet = true
     }
 
@@ -304,6 +318,7 @@ final class TartDeskViewModel {
                 if let trackedPID = launchedGraphicsPIDs.removeValue(forKey: vm.name) {
                     launchedGraphicsPIDs[trimmedName] = trackedPID
                 }
+                renameSharedDirectoryShares(from: vm.name, to: trimmedName)
                 selectedVMID = trimmedName
             }
 
@@ -313,6 +328,7 @@ final class TartDeskViewModel {
                 .filter { !$0.isEmpty }
                 .joined(separator: "\n")
             commandMessages.append(updateMessage.isEmpty ? "Updated \(editForm.name)." : updateMessage)
+            try saveEditedDirectoryShares(for: editForm.name)
             lastCommandOutput = commandMessages.joined(separator: "\n")
             isShowingEditSheet = false
             await refresh()
@@ -346,6 +362,22 @@ final class TartDeskViewModel {
 
     func dismissError() {
         errorMessage = nil
+    }
+
+    func addEditDirectoryShare() {
+        editDirectoryShares.append(TartDirectoryShare())
+    }
+
+    func removeEditDirectoryShare(id: TartDirectoryShare.ID) {
+        editDirectoryShares.removeAll { $0.id == id }
+    }
+
+    func setEditDirectorySharePath(id: TartDirectoryShare.ID, path: String) {
+        guard let index = editDirectoryShares.firstIndex(where: { $0.id == id }) else { return }
+        editDirectoryShares[index].path = path
+        if editDirectoryShares[index].trimmedName.isEmpty {
+            editDirectoryShares[index].name = URL(fileURLWithPath: path).lastPathComponent
+        }
     }
 
     func copyTartInstallCommand() {
@@ -414,6 +446,57 @@ final class TartDeskViewModel {
 
     private func resetCreateForm() {
         createForm = CreateVMFormState()
+    }
+
+    private func saveEditedDirectoryShares(for vmName: String) throws {
+        let normalizedShares = editDirectoryShares
+            .map { share in
+                var normalized = share
+                normalized.name = share.trimmedName
+                normalized.path = share.trimmedPath
+                normalized.mountTag = share.trimmedMountTag
+                return normalized
+            }
+            .filter { !$0.trimmedPath.isEmpty }
+
+        let groupedShares = Dictionary(grouping: normalizedShares, by: \.effectiveMountTag)
+        for (tag, items) in groupedShares where items.count > 1 {
+            let names = items.map(\.displayName)
+            guard Set(names).count == names.count else {
+                throw CocoaError(.validationMultipleErrors, userInfo: [
+                    NSLocalizedDescriptionKey: "Shared folders with mount tag `\(tag)` must have unique names."
+                ])
+            }
+        }
+
+        var sharedFolders = loadSharedFoldersMap()
+        if normalizedShares.isEmpty {
+            sharedFolders.removeValue(forKey: vmName)
+        } else {
+            sharedFolders[vmName] = normalizedShares
+        }
+        persistSharedFoldersMap(sharedFolders)
+    }
+
+    private func sharedDirectoryShares(for vmName: String) -> [TartDirectoryShare] {
+        loadSharedFoldersMap()[vmName] ?? []
+    }
+
+    private func renameSharedDirectoryShares(from source: String, to destination: String) {
+        var sharedFolders = loadSharedFoldersMap()
+        guard let shares = sharedFolders.removeValue(forKey: source) else { return }
+        sharedFolders[destination] = shares
+        persistSharedFoldersMap(sharedFolders)
+    }
+
+    private func loadSharedFoldersMap() -> [String: [TartDirectoryShare]] {
+        guard let data = UserDefaults.standard.data(forKey: sharedFoldersDefaultsKey) else { return [:] }
+        return (try? sharedFoldersDecoder.decode([String: [TartDirectoryShare]].self, from: data)) ?? [:]
+    }
+
+    private func persistSharedFoldersMap(_ sharedFolders: [String: [TartDirectoryShare]]) {
+        guard let data = try? sharedFoldersEncoder.encode(sharedFolders) else { return }
+        UserDefaults.standard.set(data, forKey: sharedFoldersDefaultsKey)
     }
 
     private func suggestedCloneName(for sourceName: String) -> String {

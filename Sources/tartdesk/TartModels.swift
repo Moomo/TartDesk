@@ -153,6 +153,79 @@ enum TartRunMode: String, Identifiable {
     }
 }
 
+struct TartDirectoryShare: Identifiable, Hashable, Codable {
+    let id: UUID
+    var name: String
+    var path: String
+    var isReadOnly: Bool
+    var mountTag: String
+
+    init(
+        id: UUID = UUID(),
+        name: String = "",
+        path: String = "",
+        isReadOnly: Bool = false,
+        mountTag: String = ""
+    ) {
+        self.id = id
+        self.name = name
+        self.path = path
+        self.isReadOnly = isReadOnly
+        self.mountTag = mountTag
+    }
+
+    var trimmedName: String {
+        name.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var trimmedPath: String {
+        path.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var trimmedMountTag: String {
+        mountTag.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var effectiveMountTag: String {
+        trimmedMountTag.isEmpty ? "com.apple.virtio-fs.automount" : trimmedMountTag
+    }
+
+    var displayName: String {
+        if !trimmedName.isEmpty {
+            return trimmedName
+        }
+        let lastPathComponent = URL(fileURLWithPath: trimmedPath).lastPathComponent
+        return lastPathComponent.isEmpty ? trimmedPath : lastPathComponent
+    }
+
+    func commandArgument(needsExplicitName: Bool) -> String {
+        let options = shareOptions
+        let pathComponent = trimmedPath
+        let base: String
+        if needsExplicitName {
+            base = "\(displayName):\(pathComponent)"
+        } else if !trimmedName.isEmpty {
+            base = "\(trimmedName):\(pathComponent)"
+        } else {
+            base = pathComponent
+        }
+
+        guard !options.isEmpty else { return base }
+        return "\(base):\(options.joined(separator: ","))"
+    }
+
+    private var shareOptions: [String] {
+        var options: [String] = []
+        if isReadOnly {
+            options.append("ro")
+        }
+        if !trimmedMountTag.isEmpty {
+            options.append("tag=\(trimmedMountTag)")
+        }
+        return options
+    }
+}
+
 struct CreateVMFormState {
     var name = ""
     var diskSize = 50

@@ -42,8 +42,21 @@ struct TartCLIService {
         try await run(arguments: action.commandArguments(for: name))
     }
 
-    func runVM(name: String, mode: TartRunMode) async throws -> pid_t {
-        try launch(arguments: mode.commandArgumentsPrefix + [name])
+    func runVM(name: String, mode: TartRunMode, directoryShares: [TartDirectoryShare] = []) async throws -> pid_t {
+        var arguments = mode.commandArgumentsPrefix + [name]
+        let sharesRequiringExplicitNames = Set(
+            Dictionary(grouping: directoryShares.filter { !$0.trimmedPath.isEmpty }, by: \.effectiveMountTag)
+                .filter { $0.value.count > 1 }
+                .flatMap(\.value)
+                .map(\.id)
+        )
+
+        for share in directoryShares where !share.trimmedPath.isEmpty {
+            arguments.append("--dir")
+            arguments.append(share.commandArgument(needsExplicitName: sharesRequiringExplicitNames.contains(share.id)))
+        }
+
+        return try launch(arguments: arguments)
     }
 
     func focusVMWindow(name: String, preferredPID: pid_t? = nil) throws {

@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 private let slate900 = Color(red: 0.10, green: 0.14, blue: 0.22)
 private let slate700 = Color(red: 0.30, green: 0.36, blue: 0.46)
@@ -666,6 +667,8 @@ private struct CreateVMSheet: View {
 private struct EditVMSheet: View {
     @Bindable var viewModel: TartDeskViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var isImportingDirectory = false
+    @State private var selectedDirectoryShareID: TartDirectoryShare.ID?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -710,6 +713,79 @@ private struct EditVMSheet: View {
                 }
             }
 
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text("Shared Folders")
+                        .font(.headline)
+                    Spacer()
+                    Button("Add Folder") {
+                        viewModel.addEditDirectoryShare()
+                    }
+                }
+
+                Text("Saved per VM in TartDesk and applied automatically on Run via `tart run --dir`.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                if viewModel.editDirectoryShares.isEmpty {
+                    Text("No shared folders configured.")
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+                } else {
+                    ScrollView {
+                        VStack(spacing: 12) {
+                            ForEach($viewModel.editDirectoryShares) { $share in
+                                VStack(alignment: .leading, spacing: 10) {
+                                    HStack {
+                                        Text(share.trimmedPath.isEmpty ? "New Share" : share.displayName)
+                                            .font(.headline)
+                                        Spacer()
+                                        Button("Remove") {
+                                            viewModel.removeEditDirectoryShare(id: share.id)
+                                        }
+                                    }
+
+                                    HStack(spacing: 10) {
+                                        TextField("Folder path", text: $share.path)
+                                            .textFieldStyle(.roundedBorder)
+
+                                        Button("Choose") {
+                                            selectedDirectoryShareID = share.id
+                                            isImportingDirectory = true
+                                        }
+                                    }
+
+                                    HStack(spacing: 12) {
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text("Share Name")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            TextField("Optional", text: $share.name)
+                                                .textFieldStyle(.roundedBorder)
+                                        }
+
+                                        VStack(alignment: .leading, spacing: 6) {
+                                            Text("Mount Tag")
+                                                .font(.caption)
+                                                .foregroundStyle(.secondary)
+                                            TextField("Optional", text: $share.mountTag)
+                                                .textFieldStyle(.roundedBorder)
+                                        }
+                                    }
+
+                                    Toggle("Read-only", isOn: $share.isReadOnly)
+                                }
+                                .padding(14)
+                                .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16))
+                            }
+                        }
+                    }
+                    .frame(minHeight: 160, maxHeight: 260)
+                }
+            }
+
             HStack {
                 Spacer()
                 Button("Cancel") {
@@ -726,6 +802,20 @@ private struct EditVMSheet: View {
             }
         }
         .padding(24)
-        .frame(width: 460)
+        .frame(width: 560)
+        .fileImporter(
+            isPresented: $isImportingDirectory,
+            allowedContentTypes: [UTType.folder],
+            allowsMultipleSelection: false
+        ) { result in
+            guard let selectedDirectoryShareID else { return }
+            switch result {
+            case let .success(urls):
+                guard let url = urls.first else { return }
+                viewModel.setEditDirectorySharePath(id: selectedDirectoryShareID, path: url.path(percentEncoded: false))
+            case let .failure(error):
+                viewModel.errorMessage = error.localizedDescription
+            }
+        }
     }
 }
