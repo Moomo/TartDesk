@@ -28,6 +28,7 @@ if [[ ! -x "$BIN_PATH" ]]; then
   exit 1
 fi
 
+rm -rf "$APP_DIR"
 mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 cp "$BIN_PATH" "$MACOS_DIR/$APP_NAME"
 if [[ -f "$ICON_PATH" ]]; then
