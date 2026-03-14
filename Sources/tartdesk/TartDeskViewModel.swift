@@ -19,9 +19,7 @@ final class TartDeskViewModel {
     var editDirectoryShares: [TartDirectoryShare] = []
     var errorMessage: String?
     var lastCommandOutput = ""
-    var createProgressMessage: String?
-    var createProgressFraction: Double?
-    var isShowingCreateProgressOverlay = false
+    var createJobs: [TartCreateJob] = []
     var selectedInfoMessage: String?
     var launchedGraphicsPIDs: [String: pid_t] = [:]
     var tartCapabilities: TartCapabilities?
@@ -35,7 +33,7 @@ final class TartDeskViewModel {
     private let sharedFoldersDefaultsKey = "vmSharedFolders"
     private let sharedFoldersEncoder = JSONEncoder()
     private let sharedFoldersDecoder = JSONDecoder()
-    private var activeCreateTask: Task<Void, Never>?
+    private var activeCreateTasks: [UUID: Task<Void, Never>] = [:]
 
     private var deduplicatedVMs: [TartVM] {
         let taggedOCIRepositories = Set(
@@ -62,6 +60,12 @@ final class TartDeskViewModel {
 
     var officialCloneSourcePresets: [TartCloneSourcePreset] {
         tartOfficialImagePresets
+    }
+
+    func hasDownloadedCloneSource(_ sourceName: String) -> Bool {
+        let trimmedSourceName = sourceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSourceName.isEmpty else { return false }
+        return vms.contains { $0.name == trimmedSourceName }
     }
 
     var selectedVM: TartVM? {
@@ -105,6 +109,14 @@ final class TartDeskViewModel {
         guard let ipAddress = sshStatus.ipAddress else { return nil }
         let username = sshUsername.trimmingCharacters(in: .whitespacesAndNewlines)
         return username.isEmpty ? "ssh \(ipAddress)" : "ssh \(username)@\(ipAddress)"
+    }
+
+    var activeCreateJobs: [TartCreateJob] {
+        createJobs.filter { !$0.state.isTerminal }
+    }
+
+    var recentCreateJobs: [TartCreateJob] {
+        createJobs.sorted { $0.startedAt > $1.startedAt }
     }
 
     func loadInitialData() async {
@@ -274,43 +286,55 @@ final class TartDeskViewModel {
 
         createForm.name = trimmedName
         isShowingCreateSheet = false
-        isWorking = true
-        isShowingCreateProgressOverlay = true
-        createProgressMessage = createForm.creationMode == .clone
-            ? "Preparing source image..."
-            : "Preparing VM creation..."
-        createProgressFraction = nil
 
         let form = createForm
-        activeCreateTask?.cancel()
-        activeCreateTask = Task { [weak self] in
-            await self?.performCreateVM(using: form)
+        let job = TartCreateJob(
+            name: form.name,
+            sourceName: form.sourceName,
+            creationMode: form.creationMode,
+            state: form.creationMode == .clone ? .pulling : .creating,
+            progressMessage: form.creationMode == .clone
+                ? "Preparing source image..."
+                : "Preparing VM creation..."
+        )
+        createJobs.insert(job, at: 0)
+        let jobID = job.id
+
+        let task = Task<Void, Never> { [weak self] in
+            guard let self else { return }
+            await self.performCreateVM(using: form, jobID: jobID)
         }
+        activeCreateTasks[jobID] = task
+        resetCreateForm()
     }
 
-    func cancelCreateOperation() {
-        activeCreateTask?.cancel()
+    func cancelCreateOperation(id: UUID) {
+        activeCreateTasks[id]?.cancel()
     }
 
-    private func performCreateVM(using form: CreateVMFormState) async {
+    func dismissCreateJob(id: UUID) {
+        guard activeCreateTasks[id] == nil else { return }
+        createJobs.removeAll { $0.id == id }
+    }
+
+    private func performCreateVM(using form: CreateVMFormState, jobID: UUID) async {
         defer {
-            isWorking = false
-            isShowingCreateProgressOverlay = false
-            createProgressMessage = nil
-            createProgressFraction = nil
-            activeCreateTask = nil
+            activeCreateTasks.removeValue(forKey: jobID)
         }
 
         do {
             var commandMessages: [String] = []
             if form.creationMode == .clone,
                shouldPullCloneSourceBeforeCreate(form.sourceName) {
-                createProgressMessage = "Pulling OCI image..."
-                createProgressFraction = nil
+                updateCreateJob(id: jobID, state: .pulling, progressMessage: "Pulling OCI image...", progressFraction: nil)
                 let pullResult = try await service.pullImage(form.sourceName) { [weak self] progress in
                     await MainActor.run {
-                        self?.createProgressMessage = progress.message
-                        self?.createProgressFraction = progress.fractionCompleted
+                        self?.updateCreateJob(
+                            id: jobID,
+                            state: .pulling,
+                            progressMessage: progress.message,
+                            progressFraction: progress.fractionCompleted
+                        )
                     }
                 }
                 let pullMessage = formattedCommandMessage(
@@ -319,20 +343,41 @@ final class TartDeskViewModel {
                 )
                 commandMessages.append(pullMessage)
             }
-            createProgressMessage = form.creationMode == .clone
-                ? "Creating VM from source image..."
-                : "Creating empty VM..."
-            createProgressFraction = nil
+            updateCreateJob(
+                id: jobID,
+                state: .creating,
+                progressMessage: form.creationMode == .clone
+                    ? "Creating VM from source image..."
+                    : "Creating empty VM...",
+                progressFraction: nil
+            )
             let result = try await service.createVM(form)
             commandMessages.append(
                 formattedCommandMessage(result, fallback: "Created \(form.name).")
             )
             lastCommandOutput = commandMessages.joined(separator: "\n")
-            resetCreateForm()
+            updateCreateJob(
+                id: jobID,
+                state: .completed,
+                progressMessage: "Created \(form.name).",
+                progressFraction: 1
+            )
             await refresh()
         } catch is CancellationError {
             lastCommandOutput = "Create canceled."
+            updateCreateJob(
+                id: jobID,
+                state: .canceled,
+                progressMessage: "Create canceled.",
+                progressFraction: nil
+            )
         } catch {
+            updateCreateJob(
+                id: jobID,
+                state: .failed(error.localizedDescription),
+                progressMessage: error.localizedDescription,
+                progressFraction: nil
+            )
             present(error)
         }
     }
@@ -603,6 +648,18 @@ final class TartDeskViewModel {
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
         return text.isEmpty ? fallback : text
+    }
+
+    private func updateCreateJob(
+        id: UUID,
+        state: TartCreateJobState,
+        progressMessage: String,
+        progressFraction: Double?
+    ) {
+        guard let index = createJobs.firstIndex(where: { $0.id == id }) else { return }
+        createJobs[index].state = state
+        createJobs[index].progressMessage = progressMessage
+        createJobs[index].progressFraction = progressFraction
     }
 
     private func parseDisplay(_ display: String) -> (width: Int, height: Int) {
