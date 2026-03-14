@@ -129,6 +129,19 @@ struct TartCLIService {
     }
 
     @discardableResult
+    func pullImage(_ sourceName: String) async throws -> TartCommandResult {
+        try await runStreaming(arguments: ["pull", sourceName])
+    }
+
+    @discardableResult
+    func pullImage(
+        _ sourceName: String,
+        onProgress: @escaping @Sendable (TartPullProgress) async -> Void
+    ) async throws -> TartCommandResult {
+        try await runStreaming(arguments: ["pull", sourceName], onProgress: onProgress)
+    }
+
+    @discardableResult
     func renameVM(from source: String, to destination: String) async throws -> TartCommandResult {
         try await run(arguments: ["rename", source, destination])
     }
@@ -187,27 +200,104 @@ struct TartCLIService {
 
     @discardableResult
     func run(arguments: [String]) async throws -> TartCommandResult {
+        try await runStreaming(arguments: arguments)
+    }
+
+    @discardableResult
+    func runStreaming(
+        arguments: [String],
+        onProgress: (@Sendable (TartPullProgress) async -> Void)? = nil
+    ) async throws -> TartCommandResult {
+        guard let onProgress else {
+            let process = configuredProcess(arguments: arguments)
+            let stdoutPipe = Pipe()
+            let stderrPipe = Pipe()
+            process.standardOutput = stdoutPipe
+            process.standardError = stderrPipe
+
+            try process.run()
+            process.waitUntilExit()
+
+            let stdout = String(decoding: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            let stderr = String(decoding: stderrPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+
+            guard process.terminationStatus == 0 else {
+                throw TartCLIError.commandFailed(
+                    arguments: arguments,
+                    exitCode: Int(process.terminationStatus),
+                    stderr: stderr.isEmpty ? stdout : stderr
+                )
+            }
+
+            return TartCommandResult(stdout: stdout, stderr: stderr)
+        }
+
         let process = configuredProcess(arguments: arguments)
         let stdoutPipe = Pipe()
         let stderrPipe = Pipe()
         process.standardOutput = stdoutPipe
         process.standardError = stderrPipe
 
-        try process.run()
-        process.waitUntilExit()
+        let stdoutCollector = StreamCollector()
+        let stderrCollector = StreamCollector()
+        let progressParser = TartPullProgressParser()
+        let cancellationController = ProcessCancellationController()
 
-        let stdout = String(decoding: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-        let stderr = String(decoding: stderrPipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
-
-        guard process.terminationStatus == 0 else {
-            throw TartCLIError.commandFailed(
-                arguments: arguments,
-                exitCode: Int(process.terminationStatus),
-                stderr: stderr.isEmpty ? stdout : stderr
-            )
+        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            Task {
+                await stdoutCollector.append(data)
+                if let progress = await progressParser.ingest(data: data) {
+                    await onProgress(progress)
+                }
+            }
         }
 
-        return TartCommandResult(stdout: stdout, stderr: stderr)
+        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            Task {
+                await stderrCollector.append(data)
+                if let progress = await progressParser.ingest(data: data) {
+                    await onProgress(progress)
+                }
+            }
+        }
+
+        return try await withTaskCancellationHandler {
+            try Task.checkCancellation()
+            try process.run()
+            await cancellationController.set(process: process)
+            process.waitUntilExit()
+
+            stdoutPipe.fileHandleForReading.readabilityHandler = nil
+            stderrPipe.fileHandleForReading.readabilityHandler = nil
+
+            await stdoutCollector.append(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
+            await stderrCollector.append(stderrPipe.fileHandleForReading.readDataToEndOfFile())
+
+            let stdout = await stdoutCollector.stringValue
+            let stderr = await stderrCollector.stringValue
+
+            if await cancellationController.wasCancelled || Task.isCancelled {
+                throw CancellationError()
+            }
+
+            guard process.terminationStatus == 0 else {
+                throw TartCLIError.commandFailed(
+                    arguments: arguments,
+                    exitCode: Int(process.terminationStatus),
+                    stderr: stderr.isEmpty ? stdout : stderr
+                )
+            }
+
+            return TartCommandResult(stdout: stdout, stderr: stderr)
+        } onCancel: {
+            Task {
+                await cancellationController.cancel()
+            }
+        }
     }
 
     func launch(arguments: [String]) throws -> pid_t {
@@ -344,6 +434,67 @@ struct TartCLIService {
         let promptKey = "AXTrustedCheckOptionPrompt"
         let options = [promptKey: true] as CFDictionary
         return AXIsProcessTrustedWithOptions(options)
+    }
+}
+
+private actor StreamCollector {
+    private var buffer = Data()
+
+    func append(_ data: Data) {
+        guard !data.isEmpty else { return }
+        buffer.append(data)
+    }
+
+    var stringValue: String {
+        String(decoding: buffer, as: UTF8.self)
+    }
+}
+
+private actor TartPullProgressParser {
+    private var recentText = ""
+    private let percentRegex = try? NSRegularExpression(pattern: #"(\d{1,3}(?:\.\d+)?)%"#)
+
+    func ingest(data: Data) -> TartPullProgress? {
+        let chunk = String(decoding: data, as: UTF8.self)
+        guard !chunk.isEmpty else { return nil }
+
+        recentText.append(chunk)
+        if recentText.count > 4096 {
+            recentText = String(recentText.suffix(4096))
+        }
+
+        guard let percentRegex else {
+            return TartPullProgress(fractionCompleted: nil, message: "Pulling OCI image...")
+        }
+
+        let range = NSRange(recentText.startIndex..<recentText.endIndex, in: recentText)
+        let matches = percentRegex.matches(in: recentText, range: range)
+        guard let match = matches.last,
+              let percentRange = Range(match.range(at: 1), in: recentText),
+              let percent = Double(recentText[percentRange]) else {
+            return TartPullProgress(fractionCompleted: nil, message: "Pulling OCI image...")
+        }
+
+        let clampedPercent = max(0, min(percent, 100))
+        return TartPullProgress(
+            fractionCompleted: clampedPercent / 100,
+            message: "Pulling OCI image... \(Int(clampedPercent.rounded()))%"
+        )
+    }
+}
+
+private actor ProcessCancellationController {
+    private var process: Process?
+    private(set) var wasCancelled = false
+
+    func set(process: Process) {
+        self.process = process
+    }
+
+    func cancel() {
+        wasCancelled = true
+        guard let process, process.isRunning else { return }
+        process.terminate()
     }
 }
 

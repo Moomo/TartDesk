@@ -85,6 +85,11 @@ struct TartCommandResult {
     let stderr: String
 }
 
+struct TartPullProgress: Hashable {
+    let fractionCompleted: Double?
+    let message: String
+}
+
 enum TartSourceFilter: String, CaseIterable, Identifiable {
     case all
     case local
@@ -246,6 +251,107 @@ struct CreateVMFormState {
         }
     }
 }
+
+enum TartGuestOSFamily: String, Hashable {
+    case macOS
+    case linux
+    case unknown
+
+    var title: String {
+        switch self {
+        case .macOS: "macOS"
+        case .linux: "Linux"
+        case .unknown: "Unknown"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .macOS: "apple.logo"
+        case .linux: "terminal"
+        case .unknown: "externaldrive"
+        }
+    }
+
+    static func infer(from sourceName: String) -> Self {
+        let lowercased = sourceName.lowercased()
+        if lowercased.contains("macos-") ||
+            lowercased.contains("sequoia") ||
+            lowercased.contains("sonoma") ||
+            lowercased.contains("ventura") ||
+            lowercased.contains("monterey") ||
+            lowercased.contains("tahoe") {
+            return .macOS
+        }
+        if lowercased.contains("ubuntu") ||
+            lowercased.contains("debian") ||
+            lowercased.contains("fedora") ||
+            lowercased.contains("linux") {
+            return .linux
+        }
+        return .unknown
+    }
+}
+
+struct TartCloneSourcePreset: Identifiable, Hashable {
+    let sourceName: String
+    let title: String
+    let subtitle: String
+    let osFamily: TartGuestOSFamily
+
+    var id: String { sourceName }
+}
+
+let tartOfficialImagePresets: [TartCloneSourcePreset] = [
+    TartCloneSourcePreset(
+        sourceName: "ghcr.io/cirruslabs/macos-tahoe-base:latest",
+        title: "macOS Tahoe Base",
+        subtitle: "Official macOS 26 base image",
+        osFamily: .macOS
+    ),
+    TartCloneSourcePreset(
+        sourceName: "ghcr.io/cirruslabs/macos-sequoia-base:latest",
+        title: "macOS Sequoia Base",
+        subtitle: "Official macOS 15 base image",
+        osFamily: .macOS
+    ),
+    TartCloneSourcePreset(
+        sourceName: "ghcr.io/cirruslabs/macos-sonoma-base:latest",
+        title: "macOS Sonoma Base",
+        subtitle: "Official macOS 14 base image",
+        osFamily: .macOS
+    ),
+    TartCloneSourcePreset(
+        sourceName: "ghcr.io/cirruslabs/macos-ventura-base:latest",
+        title: "macOS Ventura Base",
+        subtitle: "Official macOS 13 base image",
+        osFamily: .macOS
+    ),
+    TartCloneSourcePreset(
+        sourceName: "ghcr.io/cirruslabs/macos-monterey-base:latest",
+        title: "macOS Monterey Base",
+        subtitle: "Official macOS 12 base image",
+        osFamily: .macOS
+    ),
+    TartCloneSourcePreset(
+        sourceName: "ghcr.io/cirruslabs/ubuntu:latest",
+        title: "Ubuntu",
+        subtitle: "Official Linux image",
+        osFamily: .linux
+    ),
+    TartCloneSourcePreset(
+        sourceName: "ghcr.io/cirruslabs/debian:latest",
+        title: "Debian",
+        subtitle: "Official Linux image",
+        osFamily: .linux
+    ),
+    TartCloneSourcePreset(
+        sourceName: "ghcr.io/cirruslabs/fedora:latest",
+        title: "Fedora",
+        subtitle: "Official Linux image",
+        osFamily: .linux
+    ),
+]
 
 struct EditVMFormState {
     var name = ""
