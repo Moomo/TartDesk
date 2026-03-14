@@ -9,7 +9,7 @@ struct TartDeskApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(viewModel: model)
-                .frame(minWidth: 1080, minHeight: 720)
+                .frame(minWidth: 960, minHeight: 700)
                 .onAppear {
                     configureMainWindow()
                 }
@@ -18,6 +18,7 @@ struct TartDeskApp: App {
 
     private func configureMainWindow() {
         guard let window = NSApp.windows.first else { return }
+        window.title = "TartDesk"
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.collectionBehavior.remove(.fullScreenAuxiliary)
         window.tabbingMode = .preferred
