@@ -705,48 +705,86 @@ private struct DetailCard: View {
 private struct CreateVMSheet: View {
     @Bindable var viewModel: TartDeskViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var sourceListMode: SourceListMode = .official
+    @State private var sourceSearchText = ""
+
+    private enum SourceListMode: String, CaseIterable, Identifiable {
+        case official
+        case available
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .official: "Official OCI Images"
+            case .available: "Available in TartDesk"
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Create Instance")
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Create Instance")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
 
-                    Picker("Mode", selection: $viewModel.createForm.creationMode) {
-                        ForEach(CreateVMFormState.CreationMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
+                Picker("Mode", selection: $viewModel.createForm.creationMode) {
+                    ForEach(CreateVMFormState.CreationMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
                     }
-                    .pickerStyle(.segmented)
+                }
+                .pickerStyle(.segmented)
 
-                    TextField("New VM name", text: $viewModel.createForm.name)
-                        .textFieldStyle(.roundedBorder)
+                TextField("New VM name", text: $viewModel.createForm.name)
+                    .textFieldStyle(.roundedBorder)
 
-                    if viewModel.createForm.creationMode == .clone {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Source VM or OCI image")
-                                .font(.headline)
+                if viewModel.createForm.creationMode == .clone {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Source VM or OCI image")
+                            .font(.headline)
 
-                            TextField("ghcr.io/cirruslabs/macos-tahoe-base:latest", text: $viewModel.createForm.sourceName)
-                                .textFieldStyle(.roundedBorder)
+                        TextField("ghcr.io/cirruslabs/macos-tahoe-base:latest", text: $viewModel.createForm.sourceName)
+                            .textFieldStyle(.roundedBorder)
 
-                            Text("Official OCI Images")
-                                .font(.headline)
+                        Picker("Source Library", selection: $sourceListMode) {
+                            ForEach(availableSourceListModes) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
 
-                            Text("Pulled from Tart's current Quick Start image lineup.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                        TextField("Search images or VMs", text: $sourceSearchText)
+                            .textFieldStyle(.roundedBorder)
 
-                            VStack(spacing: 10) {
-                                ForEach(viewModel.officialCloneSourcePresets) { preset in
+                        Text(sourceListMode == .official
+                             ? "Pulled from Tart's current Quick Start image lineup."
+                             : "Images and VMs already available in TartDesk.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Stepper(value: $viewModel.createForm.diskSize, in: 10...500, step: 10) {
+                        Text("Disk Size: \(viewModel.createForm.diskSize) GB")
+                    }
+
+                    Toggle("Linux template", isOn: $viewModel.createForm.linuxTemplate)
+                }
+            }
+            .padding(24)
+
+            Divider()
+
+            Group {
+                if viewModel.createForm.creationMode == .clone {
+                    ScrollView {
+                        VStack(spacing: 10) {
+                            if sourceListMode == .official {
+                                ForEach(filteredOfficialPresets) { preset in
                                     Button {
                                         viewModel.selectCreateSource(preset.sourceName)
                                     } label: {
-                                        CloneSourceCard(
+                                        CompactCloneSourceRow(
                                             title: preset.title,
-                                            subtitle: preset.subtitle,
-                                            sourceName: preset.sourceName,
                                             osFamily: preset.osFamily,
                                             statusLabel: viewModel.hasDownloadedCloneSource(preset.sourceName) ? "Downloaded" : "Not Downloaded",
                                             isSelected: viewModel.createForm.sourceName == preset.sourceName
@@ -754,46 +792,41 @@ private struct CreateVMSheet: View {
                                     }
                                     .buttonStyle(.plain)
                                 }
-                            }
-
-                            if !viewModel.cloneSourceCandidates.isEmpty {
-                                Text("Available in TartDesk")
-                                    .font(.headline)
-                                    .padding(.top, 6)
-
-                                ScrollView {
-                                    VStack(spacing: 10) {
-                                        ForEach(viewModel.cloneSourceCandidates, id: \.name) { vm in
-                                            Button {
-                                                viewModel.selectCreateSource(vm.name)
-                                            } label: {
-                                                CloneSourceCard(
-                                                    title: vm.displayTitle,
-                                                    subtitle: vm.isLocal ? "Local VM" : "Pulled OCI image",
-                                                    sourceName: vm.displayReference,
-                                                    osFamily: TartGuestOSFamily.infer(from: vm.name),
-                                                    statusLabel: vm.isLocal ? "Local" : "Downloaded",
-                                                    isSelected: viewModel.createForm.sourceName == vm.name
-                                                )
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                    }
+                                if filteredOfficialPresets.isEmpty {
+                                    emptySearchState
                                 }
-                                .frame(maxHeight: 180)
+                            } else if viewModel.cloneSourceCandidates.isEmpty {
+                                Text("No local VMs or downloaded OCI images yet.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(16)
+                                    .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+                            } else if filteredCloneCandidates.isEmpty {
+                                emptySearchState
+                            } else {
+                                ForEach(filteredCloneCandidates, id: \.name) { vm in
+                                    Button {
+                                        viewModel.selectCreateSource(vm.name)
+                                    } label: {
+                                        CompactCloneSourceRow(
+                                            title: vm.displayTitle,
+                                            osFamily: TartGuestOSFamily.infer(from: vm.name),
+                                            statusLabel: vm.isLocal ? "Local" : "Downloaded",
+                                            isSelected: viewModel.createForm.sourceName == vm.name
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
                         }
-                    } else {
-                        Stepper(value: $viewModel.createForm.diskSize, in: 10...500, step: 10) {
-                            Text("Disk Size: \(viewModel.createForm.diskSize) GB")
-                        }
-
-                        Toggle("Linux template", isOn: $viewModel.createForm.linuxTemplate)
+                        .padding(24)
                     }
-
+                } else {
+                    Color.clear
                 }
-                .padding(24)
             }
+
             Divider()
             HStack {
                 Spacer()
@@ -815,6 +848,50 @@ private struct CreateVMSheet: View {
             .background(.bar)
         }
         .frame(width: 560, height: 560)
+        .onAppear {
+            if sourceListMode == .available && viewModel.cloneSourceCandidates.isEmpty {
+                sourceListMode = .official
+            }
+        }
+        .onChange(of: viewModel.createForm.creationMode) { _, newValue in
+            guard newValue == .clone else { return }
+            if sourceListMode == .available && viewModel.cloneSourceCandidates.isEmpty {
+                sourceListMode = .official
+            }
+        }
+    }
+
+    private var availableSourceListModes: [SourceListMode] {
+        viewModel.cloneSourceCandidates.isEmpty ? [.official] : SourceListMode.allCases
+    }
+
+    private var filteredOfficialPresets: [TartCloneSourcePreset] {
+        let query = sourceSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return viewModel.officialCloneSourcePresets }
+        return viewModel.officialCloneSourcePresets.filter { preset in
+            preset.title.localizedCaseInsensitiveContains(query) ||
+            preset.sourceName.localizedCaseInsensitiveContains(query) ||
+            preset.osFamily.title.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var filteredCloneCandidates: [TartVM] {
+        let query = sourceSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return viewModel.cloneSourceCandidates }
+        return viewModel.cloneSourceCandidates.filter { vm in
+            vm.displayTitle.localizedCaseInsensitiveContains(query) ||
+            vm.displayReference.localizedCaseInsensitiveContains(query) ||
+            vm.shortSource.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var emptySearchState: some View {
+        Text("No matching sources.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
@@ -962,62 +1039,50 @@ private struct CreateJobRow: View {
     }
 }
 
-private struct CloneSourceCard: View {
+private struct CompactCloneSourceRow: View {
     let title: String
-    let subtitle: String
-    let sourceName: String
     let osFamily: TartGuestOSFamily
     let statusLabel: String?
     let isSelected: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(spacing: 10) {
             Image(systemName: osFamily.iconName)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 16, weight: .semibold))
                 .foregroundStyle(iconForeground)
-                .frame(width: 34, height: 34)
-                .background(iconBackground, in: RoundedRectangle(cornerRadius: 10))
+                .frame(width: 28, height: 28)
+                .background(iconBackground, in: RoundedRectangle(cornerRadius: 9))
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(titleColor)
-                        .lineLimit(1)
-                    Text(osFamily.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(badgeForeground)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(badgeBackground, in: Capsule())
-                        .overlay(
-                            Capsule()
-                                .stroke(badgeBorder, lineWidth: 1)
-                        )
-                    if let statusLabel {
-                        Text(statusLabel)
-                            .font(.caption.weight(.semibold))
-                            .foregroundStyle(statusForeground)
-                            .padding(.horizontal, 8)
-                            .padding(.vertical, 3)
-                            .background(statusBackground, in: Capsule())
-                    }
-                }
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(titleColor)
+                .lineLimit(1)
 
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(subtitleColor)
-                    .lineLimit(1)
+            Spacer(minLength: 8)
 
-                Text(sourceName)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(sourceNameColor)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+            Text(osFamily.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(badgeForeground)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(badgeBackground, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(badgeBorder, lineWidth: 1)
+                )
+
+            if let statusLabel {
+                Text(statusLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(statusForeground)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(statusBackground, in: Capsule())
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(
             isSelected ? Color.accentColor.opacity(0.12) : Color(NSColor.controlBackgroundColor),
             in: RoundedRectangle(cornerRadius: 16)
@@ -1085,14 +1150,6 @@ private struct CloneSourceCard: View {
 
     private var titleColor: Color {
         Color.primary
-    }
-
-    private var subtitleColor: Color {
-        Color.secondary
-    }
-
-    private var sourceNameColor: Color {
-        Color.secondary
     }
 
     private var statusForeground: Color {
