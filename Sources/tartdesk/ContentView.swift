@@ -1,11 +1,11 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-private let slate900 = Color(red: 0.10, green: 0.14, blue: 0.22)
-private let slate700 = Color(red: 0.30, green: 0.36, blue: 0.46)
-private let slate200 = Color(red: 0.86, green: 0.90, blue: 0.95)
-private let surfaceBlue = Color(red: 0.95, green: 0.97, blue: 0.99)
-private let sidebarSurface = Color(red: 0.83, green: 0.89, blue: 0.96)
+private let slate900 = Color(NSColor.labelColor)
+private let slate700 = Color(NSColor.secondaryLabelColor)
+private let slate200 = Color(NSColor.separatorColor)
+private let surfaceBlue = Color(NSColor.controlBackgroundColor)
+private let sidebarSurface = Color(NSColor.underPageBackgroundColor)
 
 struct ContentView: View {
     @Bindable var viewModel: TartDeskViewModel
@@ -38,7 +38,6 @@ struct ContentView: View {
         .task {
             await viewModel.loadInitialData()
         }
-        .toolbarColorScheme(.dark, for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
             ToolbarItemGroup {
@@ -145,12 +144,12 @@ struct ContentView: View {
                 } label: {
                     Text(filter.title)
                         .font(.system(size: 13, weight: .semibold))
-                        .foregroundStyle(viewModel.sourceFilter == filter ? .white : slate900)
+                        .foregroundStyle(viewModel.sourceFilter == filter ? Color(NSColor.selectedMenuItemTextColor) : Color.primary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 9)
                         .background(
                             viewModel.sourceFilter == filter
-                                ? slate900
+                                ? Color.accentColor
                                 : Color.clear,
                             in: RoundedRectangle(cornerRadius: 12)
                         )
@@ -160,7 +159,7 @@ struct ContentView: View {
             }
         }
         .padding(8)
-        .background(.white, in: RoundedRectangle(cornerRadius: 18))
+        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 18))
         .overlay(
             RoundedRectangle(cornerRadius: 18)
                 .stroke(slate200.opacity(0.9), lineWidth: 1)
@@ -239,6 +238,7 @@ struct ContentView: View {
         ZStack(alignment: .topTrailing) {
             Image(systemName: viewModel.activeCreateJobs.isEmpty ? "arrow.down.circle" : "arrow.down.circle.fill")
                 .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(slate900)
 
             if !viewModel.activeCreateJobs.isEmpty {
                 Text("\(viewModel.activeCreateJobs.count)")
@@ -273,15 +273,46 @@ struct ContentView: View {
                 .background(Color(NSColor.textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
 
             HStack(spacing: 10) {
+                Button(viewModel.isInstallingTart ? "Installing..." : "Install Tart") {
+                    viewModel.installTart()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(viewModel.isInstallingTart)
+
                 Button("Copy Install Command") {
                     viewModel.copyTartInstallCommand()
                 }
-                .buttonStyle(.borderedProminent)
+                .buttonStyle(.bordered)
+                .disabled(viewModel.isInstallingTart)
 
                 Button("Open Tart Website") {
                     viewModel.openTartWebsite()
                 }
                 .buttonStyle(.bordered)
+            }
+
+            if viewModel.isInstallingTart || !(viewModel.tartInstallLog.isEmpty && viewModel.tartInstallProgressMessage == nil) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        if viewModel.isInstallingTart {
+                            ProgressView()
+                                .controlSize(.regular)
+                        }
+                        Text(viewModel.tartInstallProgressMessage ?? "Waiting for installer output...")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    ScrollView {
+                        Text(viewModel.tartInstallLog.isEmpty ? "Installer output will appear here." : viewModel.tartInstallLog)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .font(.system(size: 12, design: .monospaced))
+                            .textSelection(.enabled)
+                            .padding(12)
+                    }
+                    .frame(minHeight: 140, maxHeight: 180)
+                    .background(Color(NSColor.textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
+                }
             }
         }
         .frame(maxWidth: .infinity, minHeight: 360, alignment: .topLeading)
@@ -302,7 +333,7 @@ struct ContentView: View {
             statLine(label: "OCI", value: "\(oci)")
         }
         .padding(16)
-        .background(.white, in: RoundedRectangle(cornerRadius: 20))
+        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 20))
         .overlay(
             RoundedRectangle(cornerRadius: 20)
                 .stroke(slate200.opacity(0.8), lineWidth: 1)
@@ -631,7 +662,7 @@ private struct VMRow: View {
         .background(
             isSelected
                 ? Color.accentColor.opacity(0.14)
-                : .white,
+                : Color(NSColor.controlBackgroundColor),
             in: RoundedRectangle(cornerRadius: 12)
         )
         .overlay(
@@ -960,7 +991,7 @@ private struct CreateJobRow: View {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(job.displayTitle)
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(Color.white.opacity(0.96))
+                            .foregroundStyle(Color.primary)
                             .lineLimit(1)
                         Text(job.state.title)
                             .font(.caption.weight(.semibold))
@@ -1033,7 +1064,7 @@ private struct CreateJobRow: View {
         case .linux:
             return Color(red: 0.06, green: 0.47, blue: 0.28)
         case .unknown:
-            return Color.white.opacity(0.8)
+            return Color.primary.opacity(0.8)
         }
     }
 
@@ -1044,7 +1075,7 @@ private struct CreateJobRow: View {
         case .linux:
             return Color(red: 0.84, green: 0.95, blue: 0.88)
         case .unknown:
-            return Color.white.opacity(0.14)
+            return Color(NSColor.quaternaryLabelColor).opacity(0.18)
         }
     }
 }

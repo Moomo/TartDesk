@@ -20,6 +20,9 @@ final class TartDeskViewModel {
     var errorMessage: String?
     var lastCommandOutput = ""
     var createJobs: [TartCreateJob] = []
+    var isInstallingTart = false
+    var tartInstallProgressMessage: String?
+    var tartInstallLog = ""
     var selectedInfoMessage: String?
     var launchedGraphicsPIDs: [String: pid_t] = [:]
     var tartCapabilities: TartCapabilities?
@@ -525,6 +528,37 @@ final class TartDeskViewModel {
         lastCommandOutput = "Copied install command: \(tartInstallCommand)"
     }
 
+    func installTart() {
+        guard !isInstallingTart else { return }
+        isInstallingTart = true
+        tartInstallProgressMessage = "Starting Homebrew install..."
+        tartInstallLog = ""
+
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            defer { self.isInstallingTart = false }
+
+            do {
+                let result = try await self.service.installTart { [weak self] line in
+                    await MainActor.run {
+                        self?.tartInstallProgressMessage = line
+                        self?.appendTartInstallLog(line)
+                    }
+                }
+                self.setCommandOutput(result, fallback: "Installed Tart.")
+                self.tartInstallProgressMessage = "Install complete."
+                await self.loadCapabilities()
+                await self.refresh()
+                if self.isTartAvailable {
+                    self.prepareCreateSheet()
+                }
+            } catch {
+                self.appendTartInstallLog(error.localizedDescription)
+                self.present(error)
+            }
+        }
+    }
+
     func openTartWebsite() {
         guard let url = URL(string: "https://github.com/cirruslabs/tart") else { return }
         NSWorkspace.shared.open(url)
@@ -577,6 +611,16 @@ final class TartDeskViewModel {
 
     private func setCommandOutput(_ result: TartCommandResult, fallback: String) {
         lastCommandOutput = formattedCommandMessage(result, fallback: fallback)
+    }
+
+    private func appendTartInstallLog(_ line: String) {
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        if tartInstallLog.isEmpty {
+            tartInstallLog = trimmed
+        } else {
+            tartInstallLog += "\n" + trimmed
+        }
     }
 
     private func resetCreateForm() {

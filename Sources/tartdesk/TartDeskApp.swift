@@ -18,6 +18,7 @@ struct TartDeskApp: App {
 
     private func configureMainWindow() {
         guard let window = NSApp.windows.first else { return }
+        window.title = "TartDesk"
         window.collectionBehavior.insert(.fullScreenPrimary)
         window.collectionBehavior.remove(.fullScreenAuxiliary)
         window.tabbingMode = .preferred

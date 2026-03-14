@@ -8,6 +8,10 @@ struct TartCLIService {
         "/opt/homebrew/bin/tart",
         "/usr/local/bin/tart"
     ]
+    private let knownHomebrewPaths = [
+        "/opt/homebrew/bin/brew",
+        "/usr/local/bin/brew"
+    ]
 
     func isTartInstalled() -> Bool {
         tartExecutableURL() != nil
@@ -35,6 +39,75 @@ struct TartCLIService {
     func fetchDetails(for name: String) async throws -> TartVMDetails {
         let result = try await run(arguments: ["get", name, "--format", "json"])
         return try decoder.decode(TartVMDetails.self, from: Data(result.stdout.utf8))
+    }
+
+    @discardableResult
+    func installTart(
+        onProgress: @escaping @Sendable (String) async -> Void
+    ) async throws -> TartCommandResult {
+        guard let brewExecutableURL = brewExecutableURL() else {
+            throw TartCLIError.homebrewNotInstalled
+        }
+
+        let process = Process()
+        process.executableURL = brewExecutableURL
+        process.arguments = ["install", "cirruslabs/cli/tart"]
+
+        let stdoutPipe = Pipe()
+        let stderrPipe = Pipe()
+        process.standardOutput = stdoutPipe
+        process.standardError = stderrPipe
+
+        let stdoutCollector = StreamCollector()
+        let stderrCollector = StreamCollector()
+
+        stdoutPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            Task {
+                await stdoutCollector.append(data)
+                let text = String(decoding: data, as: UTF8.self)
+                let lines = text.split(whereSeparator: \.isNewline).map(String.init).filter { !$0.isEmpty }
+                if let lastLine = lines.last {
+                    await onProgress(lastLine)
+                }
+            }
+        }
+
+        stderrPipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            guard !data.isEmpty else { return }
+            Task {
+                await stderrCollector.append(data)
+                let text = String(decoding: data, as: UTF8.self)
+                let lines = text.split(whereSeparator: \.isNewline).map(String.init).filter { !$0.isEmpty }
+                if let lastLine = lines.last {
+                    await onProgress(lastLine)
+                }
+            }
+        }
+
+        try process.run()
+        process.waitUntilExit()
+
+        stdoutPipe.fileHandleForReading.readabilityHandler = nil
+        stderrPipe.fileHandleForReading.readabilityHandler = nil
+
+        await stdoutCollector.append(stdoutPipe.fileHandleForReading.readDataToEndOfFile())
+        await stderrCollector.append(stderrPipe.fileHandleForReading.readDataToEndOfFile())
+
+        let stdout = await stdoutCollector.stringValue
+        let stderr = await stderrCollector.stringValue
+
+        guard process.terminationStatus == 0 else {
+            throw TartCLIError.commandFailed(
+                arguments: ["brew", "install", "cirruslabs/cli/tart"],
+                exitCode: Int(process.terminationStatus),
+                stderr: stderr.isEmpty ? stdout : stderr
+            )
+        }
+
+        return TartCommandResult(stdout: stdout, stderr: stderr)
     }
 
     @discardableResult
@@ -339,6 +412,25 @@ struct TartCLIService {
         return nil
     }
 
+    private func brewExecutableURL() -> URL? {
+        for path in knownHomebrewPaths where FileManager.default.isExecutableFile(atPath: path) {
+            return URL(fileURLWithPath: path)
+        }
+
+        let pathEntries = (ProcessInfo.processInfo.environment["PATH"] ?? "")
+            .split(separator: ":")
+            .map(String.init)
+
+        for entry in pathEntries {
+            let candidate = URL(fileURLWithPath: entry).appendingPathComponent("brew").path
+            if FileManager.default.isExecutableFile(atPath: candidate) {
+                return URL(fileURLWithPath: candidate)
+            }
+        }
+
+        return nil
+    }
+
     private func findGraphicsRunProcessID(for name: String) throws -> pid_t {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/bin/ps")
@@ -500,6 +592,7 @@ private actor ProcessCancellationController {
 
 enum TartCLIError: LocalizedError {
     case tartNotInstalled
+    case homebrewNotInstalled
     case commandFailed(arguments: [String], exitCode: Int, stderr: String)
     case vmWindowNotFound(name: String)
     case windowFocusFailed(name: String)
@@ -512,9 +605,11 @@ enum TartCLIError: LocalizedError {
         switch self {
         case .tartNotInstalled:
             return "Tart is not installed. Install it first to use TartDesk."
+        case .homebrewNotInstalled:
+            return "Homebrew is not installed. Install Homebrew first to install Tart from TartDesk."
         case let .commandFailed(arguments, exitCode, stderr):
             let message = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
-            return "`tart \(arguments.joined(separator: " "))` failed with exit code \(exitCode).\n\(message)"
+            return "`\(arguments.joined(separator: " "))` failed with exit code \(exitCode).\n\(message)"
         case let .vmWindowNotFound(name):
             return "No visible Tart window was found for \(name). Start it with `Run` instead of `Run Headless` first."
         case let .windowFocusFailed(name):
