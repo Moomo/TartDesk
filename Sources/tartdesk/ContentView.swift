@@ -15,24 +15,30 @@ struct ContentView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let layout = layoutMetrics(for: proxy.size.width)
+            if viewModel.isTartAvailable {
+                let layout = layoutMetrics(for: proxy.size.width)
 
-            HStack(spacing: 0) {
-                if isSidebarVisible {
-                    sidebar
-                        .frame(width: layout.sidebarWidth)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
+                HStack(spacing: 0) {
+                    if isSidebarVisible {
+                        sidebar
+                            .frame(width: layout.sidebarWidth)
+                            .transition(.move(edge: .leading).combined(with: .opacity))
+
+                        Divider()
+                    }
+
+                    vmList
+                        .frame(width: layout.listWidth)
 
                     Divider()
+
+                    detailPanel
+                        .frame(minWidth: layout.detailMinWidth, maxWidth: .infinity, maxHeight: .infinity)
                 }
-
-                vmList
-                    .frame(width: layout.listWidth)
-
-                Divider()
-
-                detailPanel
-                    .frame(minWidth: layout.detailMinWidth, maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                tartInstallFullscreen
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .background(Color(NSColor.windowBackgroundColor))
             }
         }
         .animation(.snappy(duration: 0.18, extraBounce: 0), value: isSidebarVisible)
@@ -273,6 +279,18 @@ struct ContentView: View {
             let listWidth = min(max(availableWidth * 0.34, 250), 340)
             let detailMinWidth = max(availableWidth - listWidth, 320)
             return (0, listWidth, detailMinWidth)
+        }
+    }
+
+    private var tartInstallFullscreen: some View {
+        ScrollView {
+            VStack {
+                tartInstallCard
+                    .frame(maxWidth: 760)
+            }
+            .frame(maxWidth: .infinity, minHeight: 0)
+            .padding(.horizontal, 32)
+            .padding(.vertical, 40)
         }
     }
 
