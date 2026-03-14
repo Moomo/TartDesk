@@ -290,14 +290,16 @@ struct ContentView: View {
     }
 
     private var statsCard: some View {
-        let total = viewModel.vms.count
+        let total = viewModel.totalVisibleSourceCount
         let running = viewModel.vms.filter(\.running).count
-        let local = viewModel.vms.filter(\.isLocal).count
+        let local = viewModel.localSourceCount
+        let oci = viewModel.ociSourceCount
 
         return VStack(alignment: .leading, spacing: 12) {
             statLine(label: "Total", value: "\(total)")
             statLine(label: "Running", value: "\(running)")
             statLine(label: "Local", value: "\(local)")
+            statLine(label: "OCI", value: "\(oci)")
         }
         .padding(16)
         .background(.white, in: RoundedRectangle(cornerRadius: 20))

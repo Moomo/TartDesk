@@ -54,6 +54,18 @@ final class TartDeskViewModel {
         }
     }
 
+    var totalVisibleSourceCount: Int {
+        deduplicatedVMs.count
+    }
+
+    var localSourceCount: Int {
+        deduplicatedVMs.filter(\.isLocal).count
+    }
+
+    var ociSourceCount: Int {
+        deduplicatedVMs.filter { !$0.isLocal }.count
+    }
+
     var cloneSourceCandidates: [TartVM] {
         deduplicatedVMs
     }
