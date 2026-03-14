@@ -9,7 +9,7 @@ struct TartDeskApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView(viewModel: model)
-                .frame(minWidth: 1080, minHeight: 720)
+                .frame(minWidth: 960, minHeight: 700)
                 .onAppear {
                     configureMainWindow()
                 }

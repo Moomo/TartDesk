@@ -13,26 +13,27 @@ struct ContentView: View {
     @State private var isSidebarVisible = true
     @State private var isShowingDownloadsPanel = false
 
-    private let sidebarWidth: CGFloat = 270
-    private let listWidth: CGFloat = 340
-
     var body: some View {
-        HStack(spacing: 0) {
-            if isSidebarVisible {
-                sidebar
-                    .frame(width: sidebarWidth)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+        GeometryReader { proxy in
+            let layout = layoutMetrics(for: proxy.size.width)
+
+            HStack(spacing: 0) {
+                if isSidebarVisible {
+                    sidebar
+                        .frame(width: layout.sidebarWidth)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+
+                    Divider()
+                }
+
+                vmList
+                    .frame(width: layout.listWidth)
 
                 Divider()
+
+                detailPanel
+                    .frame(minWidth: layout.detailMinWidth, maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            vmList
-                .frame(width: listWidth)
-
-            Divider()
-
-            detailPanel
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .animation(.snappy(duration: 0.18, extraBounce: 0), value: isSidebarVisible)
         .task {
@@ -256,6 +257,23 @@ struct ContentView: View {
         }
         .frame(width: 24, height: 20)
         .contentShape(Rectangle())
+    }
+
+    private func layoutMetrics(for totalWidth: CGFloat) -> (sidebarWidth: CGFloat, listWidth: CGFloat, detailMinWidth: CGFloat) {
+        let hasSidebar = isSidebarVisible
+        let dividerCount: CGFloat = hasSidebar ? 2 : 1
+        let availableWidth = max(totalWidth - dividerCount, 720)
+
+        if hasSidebar {
+            let sidebarWidth = min(max(availableWidth * 0.22, 200), 270)
+            let listWidth = min(max(availableWidth * 0.30, 240), 340)
+            let detailMinWidth = max(availableWidth - sidebarWidth - listWidth, 280)
+            return (sidebarWidth, listWidth, detailMinWidth)
+        } else {
+            let listWidth = min(max(availableWidth * 0.34, 250), 340)
+            let detailMinWidth = max(availableWidth - listWidth, 320)
+            return (0, listWidth, detailMinWidth)
+        }
     }
 
     private var tartInstallCard: some View {
