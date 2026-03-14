@@ -5,8 +5,14 @@
 ## Requirements
 
 - macOS 14+
-- `tart` installed and available on the machine
+- `tart` installed separately and available on the machine
 - Tart-compatible VMs or OCI images
+
+`TartDesk` does not bundle `Tart`. Install it separately with:
+
+```bash
+brew install cirruslabs/cli/tart
+```
 
 ## Development
 
@@ -68,6 +74,7 @@ The build script also generates and embeds a temporary app icon.
 ## Notes
 
 - OCI images cannot be run directly. Clone them into a local VM first.
+- `TartDesk` is a GUI wrapper around the `tart` CLI and depends on a separately installed `Tart`.
 - Some features depend on guest setup, for example:
   - SSH requires guest networking and an SSH server
   - `tart exec` requires Tart Guest Agent support in the guest
@@ -77,3 +84,13 @@ The build script also generates and embeds a temporary app icon.
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE).
+
+`TartDesk` and `Tart` are licensed separately.
+
+- `TartDesk`: MIT License
+- `Tart`: licensed by Cirrus Labs under the Fair Source License 0.9
+
+See the official `Tart` repository and its license for details:
+
+- <https://github.com/cirruslabs/tart>
+- <https://github.com/cirruslabs/tart/blob/main/LICENSE>
