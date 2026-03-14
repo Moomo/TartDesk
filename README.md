@@ -73,3 +73,7 @@ The build script also generates and embeds a temporary app icon.
   - `tart exec` requires Tart Guest Agent support in the guest
   - Shared folders require Tart's directory sharing support; macOS guests mount them under `/Volumes/My Shared Files` by default
 - `dist/` is a build artifact directory and is not meant to be committed.
+
+## License
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE).
