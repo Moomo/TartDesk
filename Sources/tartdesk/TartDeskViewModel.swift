@@ -19,6 +19,9 @@ final class TartDeskViewModel {
     var editDirectoryShares: [TartDirectoryShare] = []
     var errorMessage: String?
     var lastCommandOutput = ""
+    var createProgressMessage: String?
+    var createProgressFraction: Double?
+    var isShowingCreateProgressOverlay = false
     var selectedInfoMessage: String?
     var launchedGraphicsPIDs: [String: pid_t] = [:]
     var tartCapabilities: TartCapabilities?
@@ -32,6 +35,7 @@ final class TartDeskViewModel {
     private let sharedFoldersDefaultsKey = "vmSharedFolders"
     private let sharedFoldersEncoder = JSONEncoder()
     private let sharedFoldersDecoder = JSONDecoder()
+    private var activeCreateTask: Task<Void, Never>?
 
     private var deduplicatedVMs: [TartVM] {
         let taggedOCIRepositories = Set(
@@ -54,6 +58,10 @@ final class TartDeskViewModel {
 
     var cloneSourceCandidates: [TartVM] {
         deduplicatedVMs
+    }
+
+    var officialCloneSourcePresets: [TartCloneSourcePreset] {
+        tartOfficialImagePresets
     }
 
     var selectedVM: TartVM? {
@@ -252,24 +260,78 @@ final class TartDeskViewModel {
         }
     }
 
-    func createVM() async {
+    func startCreateVM() {
         guard isTartAvailable else { return }
         let trimmedName = createForm.name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedName.isEmpty else {
             errorMessage = "Name is required."
             return
         }
+        if createForm.creationMode == .clone && !canCreateFromClone {
+            errorMessage = "Source VM or OCI image is required."
+            return
+        }
 
         createForm.name = trimmedName
+        isShowingCreateSheet = false
         isWorking = true
-        defer { isWorking = false }
+        isShowingCreateProgressOverlay = true
+        createProgressMessage = createForm.creationMode == .clone
+            ? "Preparing source image..."
+            : "Preparing VM creation..."
+        createProgressFraction = nil
+
+        let form = createForm
+        activeCreateTask?.cancel()
+        activeCreateTask = Task { [weak self] in
+            await self?.performCreateVM(using: form)
+        }
+    }
+
+    func cancelCreateOperation() {
+        activeCreateTask?.cancel()
+    }
+
+    private func performCreateVM(using form: CreateVMFormState) async {
+        defer {
+            isWorking = false
+            isShowingCreateProgressOverlay = false
+            createProgressMessage = nil
+            createProgressFraction = nil
+            activeCreateTask = nil
+        }
 
         do {
-            let result = try await service.createVM(createForm)
-            setCommandOutput(result, fallback: "Created \(createForm.name).")
-            isShowingCreateSheet = false
+            var commandMessages: [String] = []
+            if form.creationMode == .clone,
+               shouldPullCloneSourceBeforeCreate(form.sourceName) {
+                createProgressMessage = "Pulling OCI image..."
+                createProgressFraction = nil
+                let pullResult = try await service.pullImage(form.sourceName) { [weak self] progress in
+                    await MainActor.run {
+                        self?.createProgressMessage = progress.message
+                        self?.createProgressFraction = progress.fractionCompleted
+                    }
+                }
+                let pullMessage = formattedCommandMessage(
+                    pullResult,
+                    fallback: "Pulled \(form.sourceName)."
+                )
+                commandMessages.append(pullMessage)
+            }
+            createProgressMessage = form.creationMode == .clone
+                ? "Creating VM from source image..."
+                : "Creating empty VM..."
+            createProgressFraction = nil
+            let result = try await service.createVM(form)
+            commandMessages.append(
+                formattedCommandMessage(result, fallback: "Created \(form.name).")
+            )
+            lastCommandOutput = commandMessages.joined(separator: "\n")
             resetCreateForm()
             await refresh()
+        } catch is CancellationError {
+            lastCommandOutput = "Create canceled."
         } catch {
             present(error)
         }
@@ -341,9 +403,11 @@ final class TartDeskViewModel {
         guard isTartAvailable else { return }
         createForm = CreateVMFormState()
         if let selectedVM {
-            createForm.sourceName = selectedVM.name
-        } else if let firstCloneCandidate = vms.first {
-            createForm.sourceName = firstCloneCandidate.name
+            selectCreateSource(selectedVM.name)
+        } else if let firstCloneCandidate = cloneSourceCandidates.first {
+            selectCreateSource(firstCloneCandidate.name)
+        } else if let defaultPreset = officialCloneSourcePresets.first {
+            selectCreateSource(defaultPreset.sourceName)
         }
         isShowingCreateSheet = true
     }
@@ -353,11 +417,29 @@ final class TartDeskViewModel {
         guard let selectedVM else { return }
         createForm = CreateVMFormState()
         createForm.creationMode = .clone
-        createForm.sourceName = selectedVM.name
-        if !selectedVM.isLocal {
-            createForm.name = suggestedCloneName(for: selectedVM.name)
-        }
+        selectCreateSource(selectedVM.name)
         isShowingCreateSheet = true
+    }
+
+    func selectCreateSource(_ sourceName: String) {
+        let previousSourceName = createForm.sourceName
+        let previousSuggestedName = isRemoteCloneSource(previousSourceName)
+            ? suggestedCloneName(for: previousSourceName)
+            : ""
+        let trimmedCurrentName = createForm.name.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        createForm.sourceName = sourceName
+
+        guard createForm.creationMode == .clone else { return }
+
+        if isRemoteCloneSource(sourceName) {
+            let suggestedName = suggestedCloneName(for: sourceName)
+            if trimmedCurrentName.isEmpty || trimmedCurrentName == previousSuggestedName {
+                createForm.name = suggestedName
+            }
+        } else if trimmedCurrentName == previousSuggestedName {
+            createForm.name = ""
+        }
     }
 
     func dismissError() {
@@ -437,11 +519,7 @@ final class TartDeskViewModel {
     }
 
     private func setCommandOutput(_ result: TartCommandResult, fallback: String) {
-        let text = [result.stdout, result.stderr]
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            .joined(separator: "\n")
-        lastCommandOutput = text.isEmpty ? fallback : text
+        lastCommandOutput = formattedCommandMessage(result, fallback: fallback)
     }
 
     private func resetCreateForm() {
@@ -506,6 +584,25 @@ final class TartDeskViewModel {
             .replacingOccurrences(of: "@", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         return sanitized
+    }
+
+    private func isRemoteCloneSource(_ sourceName: String) -> Bool {
+        sourceName.contains("/")
+    }
+
+    private func shouldPullCloneSourceBeforeCreate(_ sourceName: String) -> Bool {
+        guard isRemoteCloneSource(sourceName) else { return false }
+        let trimmedSourceName = sourceName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedSourceName.isEmpty else { return false }
+        return !vms.contains { $0.name == trimmedSourceName }
+    }
+
+    private func formattedCommandMessage(_ result: TartCommandResult, fallback: String) -> String {
+        let text = [result.stdout, result.stderr]
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
+        return text.isEmpty ? fallback : text
     }
 
     private func parseDisplay(_ display: String) -> (width: Int, height: Int) {

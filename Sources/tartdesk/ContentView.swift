@@ -14,26 +14,45 @@ struct ContentView: View {
 
     private let sidebarWidth: CGFloat = 270
     private let listWidth: CGFloat = 340
+    private let overlayBackground = Color.black.opacity(0.32)
 
     var body: some View {
-        HStack(spacing: 0) {
-            if isSidebarVisible {
-                sidebar
-                    .frame(width: sidebarWidth)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
+        ZStack {
+            HStack(spacing: 0) {
+                if isSidebarVisible {
+                    sidebar
+                        .frame(width: sidebarWidth)
+                        .transition(.move(edge: .leading).combined(with: .opacity))
+
+                    Divider()
+                }
+
+                vmList
+                    .frame(width: listWidth)
 
                 Divider()
+
+                detailPanel
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            vmList
-                .frame(width: listWidth)
+            if viewModel.isShowingCreateProgressOverlay {
+                overlayBackground
+                    .ignoresSafeArea()
 
-            Divider()
-
-            detailPanel
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                CreateProgressOverlay(
+                    message: viewModel.createProgressMessage ?? "Creating instance...",
+                    progressFraction: viewModel.createProgressFraction,
+                    onCancel: { viewModel.cancelCreateOperation() }
+                )
+                .frame(maxWidth: 420)
+                .padding(24)
+                .transition(.opacity.combined(with: .scale(scale: 0.96)))
+                .zIndex(1)
+            }
         }
         .animation(.snappy(duration: 0.18, extraBounce: 0), value: isSidebarVisible)
+        .animation(.snappy(duration: 0.18, extraBounce: 0), value: viewModel.isShowingCreateProgressOverlay)
         .task {
             await viewModel.loadInitialData()
         }
@@ -539,10 +558,17 @@ private struct VMRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Text(vm.name)
-                    .fontWeight(.semibold)
-                    .lineLimit(1)
-                    .foregroundStyle(slate900)
+                HStack(spacing: 10) {
+                    Image(systemName: osFamily.iconName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(osIconForeground)
+                        .frame(width: 28, height: 28)
+                        .background(osIconBackground, in: RoundedRectangle(cornerRadius: 9))
+                    Text(vm.name)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .foregroundStyle(slate900)
+                }
                 Spacer()
                 Text(vm.stateLabel.capitalized)
                     .font(.caption.weight(.semibold))
@@ -554,6 +580,9 @@ private struct VMRow: View {
 
             HStack(spacing: 12) {
                 Label(vm.shortSource, systemImage: vm.isLocal ? "internaldrive.fill" : "shippingbox")
+                if !vm.isLocal {
+                    Label(osFamily.title, systemImage: osFamily.iconName)
+                }
                 Label(vm.displaySize, systemImage: "externaldrive")
             }
             .font(.caption)
@@ -591,6 +620,32 @@ private struct VMRow: View {
         }
         return Color.black.opacity(0.07)
     }
+
+    private var osFamily: TartGuestOSFamily {
+        TartGuestOSFamily.infer(from: vm.name)
+    }
+
+    private var osIconForeground: Color {
+        switch osFamily {
+        case .macOS:
+            return Color(red: 0.10, green: 0.33, blue: 0.80)
+        case .linux:
+            return Color(red: 0.06, green: 0.47, blue: 0.28)
+        case .unknown:
+            return slate700
+        }
+    }
+
+    private var osIconBackground: Color {
+        switch osFamily {
+        case .macOS:
+            return Color(red: 0.84, green: 0.90, blue: 0.99)
+        case .linux:
+            return Color(red: 0.84, green: 0.95, blue: 0.88)
+        case .unknown:
+            return slate200
+        }
+    }
 }
 
 private struct DetailCard: View {
@@ -616,40 +671,129 @@ private struct CreateVMSheet: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Create Instance")
-                .font(.system(size: 26, weight: .bold, design: .rounded))
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Create Instance")
+                        .font(.system(size: 26, weight: .bold, design: .rounded))
 
-            Picker("Mode", selection: $viewModel.createForm.creationMode) {
-                ForEach(CreateVMFormState.CreationMode.allCases) { mode in
-                    Text(mode.title).tag(mode)
-                }
-            }
-            .pickerStyle(.segmented)
+                    Picker("Mode", selection: $viewModel.createForm.creationMode) {
+                        ForEach(CreateVMFormState.CreationMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.segmented)
 
-            TextField("New VM name", text: $viewModel.createForm.name)
+                    TextField("New VM name", text: $viewModel.createForm.name)
+                        .textFieldStyle(.roundedBorder)
 
-            if viewModel.createForm.creationMode == .clone {
-                Picker("Source VM", selection: $viewModel.createForm.sourceName) {
-                    ForEach(viewModel.cloneSourceCandidates, id: \.name) { vm in
-                        Text(vm.name).tag(vm.name)
+                    if viewModel.createForm.creationMode == .clone {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text("Source VM or OCI image")
+                                .font(.headline)
+
+                            TextField("ghcr.io/cirruslabs/macos-tahoe-base:latest", text: $viewModel.createForm.sourceName)
+                                .textFieldStyle(.roundedBorder)
+
+                            Text("Official OCI Images")
+                                .font(.headline)
+
+                            Text("Pulled from Tart's current Quick Start image lineup.")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
+
+                            VStack(spacing: 10) {
+                                ForEach(viewModel.officialCloneSourcePresets) { preset in
+                                    Button {
+                                        viewModel.selectCreateSource(preset.sourceName)
+                                    } label: {
+                                        CloneSourceCard(
+                                            title: preset.title,
+                                            subtitle: preset.subtitle,
+                                            sourceName: preset.sourceName,
+                                            osFamily: preset.osFamily,
+                                            isSelected: viewModel.createForm.sourceName == preset.sourceName
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+
+                            if !viewModel.cloneSourceCandidates.isEmpty {
+                                Text("Available in TartDesk")
+                                    .font(.headline)
+                                    .padding(.top, 6)
+
+                                ScrollView {
+                                    VStack(spacing: 10) {
+                                        ForEach(viewModel.cloneSourceCandidates, id: \.name) { vm in
+                                            Button {
+                                                viewModel.selectCreateSource(vm.name)
+                                            } label: {
+                                                CloneSourceCard(
+                                                    title: vm.name,
+                                                    subtitle: vm.isLocal ? "Local VM" : "Pulled OCI image",
+                                                    sourceName: vm.name,
+                                                    osFamily: TartGuestOSFamily.infer(from: vm.name),
+                                                    isSelected: viewModel.createForm.sourceName == vm.name
+                                                )
+                                            }
+                                            .buttonStyle(.plain)
+                                        }
+                                    }
+                                }
+                                .frame(maxHeight: 180)
+                            }
+                        }
+                    } else {
+                        Stepper(value: $viewModel.createForm.diskSize, in: 10...500, step: 10) {
+                            Text("Disk Size: \(viewModel.createForm.diskSize) GB")
+                        }
+
+                        Toggle("Linux template", isOn: $viewModel.createForm.linuxTemplate)
+                    }
+
+                    if let createProgressMessage = viewModel.createProgressMessage {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let progressValue = viewModel.createProgressFraction {
+                                ProgressView(value: progressValue, total: 1)
+                                    .progressViewStyle(.linear)
+                                HStack {
+                                    Text(createProgressMessage)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                    Spacer()
+                                    Text("\(Int((progressValue * 100).rounded()))%")
+                                        .font(.subheadline.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                            } else {
+                                HStack(spacing: 12) {
+                                    ProgressView()
+                                        .controlSize(.regular)
+                                    Text(createProgressMessage)
+                                        .font(.subheadline)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
                     }
                 }
-            } else {
-                Stepper(value: $viewModel.createForm.diskSize, in: 10...500, step: 10) {
-                    Text("Disk Size: \(viewModel.createForm.diskSize) GB")
-                }
-
-                Toggle("Linux template", isOn: $viewModel.createForm.linuxTemplate)
+                .padding(24)
             }
-
+            Divider()
             HStack {
                 Spacer()
                 Button("Cancel") {
                     dismiss()
                 }
+                .disabled(viewModel.isWorking)
                 Button("Create") {
-                    Task { await viewModel.createVM() }
+                    viewModel.startCreateVM()
+                    dismiss()
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(
@@ -658,9 +802,185 @@ private struct CreateVMSheet: View {
                     viewModel.isWorking
                 )
             }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 16)
+            .background(.bar)
+        }
+        .frame(width: 560, height: 560)
+    }
+}
+
+private struct CreateProgressOverlay: View {
+    let message: String
+    let progressFraction: Double?
+    let onCancel: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Creating Instance")
+                .font(.system(size: 24, weight: .bold, design: .rounded))
+
+            if let progressFraction {
+                ProgressView(value: progressFraction, total: 1)
+                    .progressViewStyle(.linear)
+
+                HStack {
+                    Text(message)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("\(Int((progressFraction * 100).rounded()))%")
+                        .font(.body.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            } else {
+                HStack(spacing: 12) {
+                    ProgressView()
+                    Text(message)
+                        .font(.body)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel") {
+                    onCancel()
+                }
+            }
         }
         .padding(24)
-        .frame(width: 460)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+        .overlay(
+            RoundedRectangle(cornerRadius: 22)
+                .stroke(Color.white.opacity(0.35), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.14), radius: 28, y: 14)
+    }
+}
+
+private struct CloneSourceCard: View {
+    let title: String
+    let subtitle: String
+    let sourceName: String
+    let osFamily: TartGuestOSFamily
+    let isSelected: Bool
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: osFamily.iconName)
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(iconForeground)
+                .frame(width: 34, height: 34)
+                .background(iconBackground, in: RoundedRectangle(cornerRadius: 10))
+
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(spacing: 8) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(titleColor)
+                        .lineLimit(1)
+                    Text(osFamily.title)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(badgeForeground)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(badgeBackground, in: Capsule())
+                        .overlay(
+                            Capsule()
+                                .stroke(badgeBorder, lineWidth: 1)
+                        )
+                }
+
+                Text(subtitle)
+                    .font(.subheadline)
+                    .foregroundStyle(subtitleColor)
+                    .lineLimit(1)
+
+                Text(sourceName)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(sourceNameColor)
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(14)
+        .background(
+            isSelected ? Color.accentColor.opacity(0.12) : Color(NSColor.controlBackgroundColor),
+            in: RoundedRectangle(cornerRadius: 16)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .stroke(isSelected ? Color.accentColor.opacity(0.45) : slate200, lineWidth: 1)
+        )
+    }
+
+    private var iconForeground: Color {
+        switch osFamily {
+        case .macOS:
+            return Color(red: 0.10, green: 0.33, blue: 0.80)
+        case .linux:
+            return Color(red: 0.06, green: 0.47, blue: 0.28)
+        case .unknown:
+            return slate700
+        }
+    }
+
+    private var iconBackground: Color {
+        switch osFamily {
+        case .macOS:
+            return Color(red: 0.84, green: 0.90, blue: 0.99)
+        case .linux:
+            return Color(red: 0.84, green: 0.95, blue: 0.88)
+        case .unknown:
+            return slate200
+        }
+    }
+
+    private var badgeForeground: Color {
+        switch osFamily {
+        case .macOS:
+            return Color(red: 0.07, green: 0.24, blue: 0.58)
+        case .linux:
+            return Color(red: 0.06, green: 0.38, blue: 0.22)
+        case .unknown:
+            return slate900
+        }
+    }
+
+    private var badgeBackground: Color {
+        switch osFamily {
+        case .macOS:
+            return Color(red: 0.90, green: 0.94, blue: 1.00)
+        case .linux:
+            return Color(red: 0.89, green: 0.97, blue: 0.91)
+        case .unknown:
+            return Color.white
+        }
+    }
+
+    private var badgeBorder: Color {
+        switch osFamily {
+        case .macOS:
+            return Color(red: 0.72, green: 0.82, blue: 0.98)
+        case .linux:
+            return Color(red: 0.70, green: 0.88, blue: 0.75)
+        case .unknown:
+            return slate200
+        }
+    }
+
+    private var titleColor: Color {
+        Color.primary
+    }
+
+    private var subtitleColor: Color {
+        Color.secondary
+    }
+
+    private var sourceNameColor: Color {
+        Color.secondary
     }
 }
 
