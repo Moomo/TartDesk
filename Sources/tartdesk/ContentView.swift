@@ -735,8 +735,15 @@ private struct CreateVMSheet: View {
                 }
                 .pickerStyle(.segmented)
 
-                TextField("New VM name", text: $viewModel.createForm.name)
-                    .textFieldStyle(.roundedBorder)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Local VM Name")
+                        .font(.headline)
+                    Text("Saved locally in Tart after creation.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    TextField("my-macos-vm", text: $viewModel.createForm.name)
+                        .textFieldStyle(.roundedBorder)
+                }
 
                 if viewModel.createForm.creationMode == .clone {
                     VStack(alignment: .leading, spacing: 10) {
@@ -777,7 +784,7 @@ private struct CreateVMSheet: View {
             Group {
                 if viewModel.createForm.creationMode == .clone {
                     ScrollView {
-                        VStack(spacing: 10) {
+                        VStack(spacing: 6) {
                             if sourceListMode == .official {
                                 ForEach(filteredOfficialPresets) { preset in
                                     Button {
@@ -820,7 +827,8 @@ private struct CreateVMSheet: View {
                                 }
                             }
                         }
-                        .padding(24)
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 10)
                     }
                 } else {
                     Color.clear
@@ -1046,25 +1054,25 @@ private struct CompactCloneSourceRow: View {
     let isSelected: Bool
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             Image(systemName: osFamily.iconName)
-                .font(.system(size: 16, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(iconForeground)
-                .frame(width: 28, height: 28)
-                .background(iconBackground, in: RoundedRectangle(cornerRadius: 9))
+                .frame(width: 24, height: 24)
+                .background(iconBackground, in: RoundedRectangle(cornerRadius: 7))
 
             Text(title)
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(titleColor)
                 .lineLimit(1)
 
-            Spacer(minLength: 8)
+            Spacer(minLength: 6)
 
             Text(osFamily.title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(badgeForeground)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
                 .background(badgeBackground, in: Capsule())
                 .overlay(
                     Capsule()
@@ -1075,20 +1083,20 @@ private struct CompactCloneSourceRow: View {
                 Text(statusLabel)
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(statusForeground)
-                    .padding(.horizontal, 7)
-                    .padding(.vertical, 2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
                     .background(statusBackground, in: Capsule())
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background(
             isSelected ? Color.accentColor.opacity(0.12) : Color(NSColor.controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 16)
+            in: RoundedRectangle(cornerRadius: 14)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 14)
                 .stroke(isSelected ? Color.accentColor.opacity(0.45) : slate200, lineWidth: 1)
         )
     }
