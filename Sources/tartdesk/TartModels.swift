@@ -26,6 +26,14 @@ struct TartVM: Decodable, Identifiable, Hashable {
         }
         return withoutDigest
     }
+    var displayTitle: String {
+        let lastComponent = name.split(separator: "/").last.map(String.init) ?? name
+        let withoutDigest = lastComponent.split(separator: "@", maxSplits: 1).first.map(String.init) ?? lastComponent
+        return withoutDigest.replacingOccurrences(of: ":latest", with: "")
+    }
+    var displayReference: String {
+        name
+    }
 
     enum CodingKeys: String, CodingKey {
         case disk = "Disk"
@@ -88,6 +96,69 @@ struct TartCommandResult {
 struct TartPullProgress: Hashable {
     let fractionCompleted: Double?
     let message: String
+}
+
+enum TartCreateJobState: Hashable {
+    case pulling
+    case creating
+    case completed
+    case failed(String)
+    case canceled
+
+    var title: String {
+        switch self {
+        case .pulling: "Downloading"
+        case .creating: "Creating"
+        case .completed: "Completed"
+        case .failed: "Failed"
+        case .canceled: "Canceled"
+        }
+    }
+
+    var isTerminal: Bool {
+        switch self {
+        case .completed, .failed, .canceled: true
+        case .pulling, .creating: false
+        }
+    }
+}
+
+struct TartCreateJob: Identifiable, Hashable {
+    let id: UUID
+    let name: String
+    let sourceName: String
+    let creationMode: CreateVMFormState.CreationMode
+    let startedAt: Date
+    var state: TartCreateJobState
+    var progressMessage: String
+    var progressFraction: Double?
+
+    init(
+        id: UUID = UUID(),
+        name: String,
+        sourceName: String,
+        creationMode: CreateVMFormState.CreationMode,
+        startedAt: Date = .now,
+        state: TartCreateJobState,
+        progressMessage: String,
+        progressFraction: Double? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.sourceName = sourceName
+        self.creationMode = creationMode
+        self.startedAt = startedAt
+        self.state = state
+        self.progressMessage = progressMessage
+        self.progressFraction = progressFraction
+    }
+
+    var displayTitle: String {
+        switch creationMode {
+        case .clone: name
+        case .new: "\(name) (Empty VM)"
+        }
+    }
 }
 
 enum TartSourceFilter: String, CaseIterable, Identifiable {

@@ -11,48 +11,30 @@ struct ContentView: View {
     @Bindable var viewModel: TartDeskViewModel
     @State private var isShowingDeleteConfirmation = false
     @State private var isSidebarVisible = true
+    @State private var isShowingDownloadsPanel = false
 
     private let sidebarWidth: CGFloat = 270
     private let listWidth: CGFloat = 340
-    private let overlayBackground = Color.black.opacity(0.32)
 
     var body: some View {
-        ZStack {
-            HStack(spacing: 0) {
-                if isSidebarVisible {
-                    sidebar
-                        .frame(width: sidebarWidth)
-                        .transition(.move(edge: .leading).combined(with: .opacity))
-
-                    Divider()
-                }
-
-                vmList
-                    .frame(width: listWidth)
+        HStack(spacing: 0) {
+            if isSidebarVisible {
+                sidebar
+                    .frame(width: sidebarWidth)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
 
                 Divider()
-
-                detailPanel
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            if viewModel.isShowingCreateProgressOverlay {
-                overlayBackground
-                    .ignoresSafeArea()
+            vmList
+                .frame(width: listWidth)
 
-                CreateProgressOverlay(
-                    message: viewModel.createProgressMessage ?? "Creating instance...",
-                    progressFraction: viewModel.createProgressFraction,
-                    onCancel: { viewModel.cancelCreateOperation() }
-                )
-                .frame(maxWidth: 420)
-                .padding(24)
-                .transition(.opacity.combined(with: .scale(scale: 0.96)))
-                .zIndex(1)
-            }
+            Divider()
+
+            detailPanel
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .animation(.snappy(duration: 0.18, extraBounce: 0), value: isSidebarVisible)
-        .animation(.snappy(duration: 0.18, extraBounce: 0), value: viewModel.isShowingCreateProgressOverlay)
         .task {
             await viewModel.loadInitialData()
         }
@@ -79,6 +61,14 @@ struct ContentView: View {
                     Label("Refresh", systemImage: "arrow.clockwise")
                 }
                 .disabled(!viewModel.isTartAvailable || viewModel.isLoading || viewModel.isWorking)
+
+                Button {
+                    isShowingDownloadsPanel.toggle()
+                } label: {
+                    downloadsToolbarButton
+                }
+                .help(isShowingDownloadsPanel ? "Hide Downloads" : "Show Downloads")
+                .disabled(viewModel.recentCreateJobs.isEmpty)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -115,6 +105,11 @@ struct ContentView: View {
                 Text(viewModel.errorMessage ?? "")
             }
         )
+        .onChange(of: viewModel.activeCreateJobs.count) { _, newValue in
+            if newValue > 0 {
+                isShowingDownloadsPanel = true
+            }
+        }
     }
 
     private var sidebar: some View {
@@ -227,11 +222,36 @@ struct ContentView: View {
         }
         .background(Color(NSColor.windowBackgroundColor))
         .overlay(alignment: .topTrailing) {
-            if viewModel.isLoading || viewModel.isWorking {
-                ProgressView()
-                    .padding()
+            VStack(alignment: .trailing, spacing: 12) {
+                if viewModel.isLoading || viewModel.isWorking {
+                    ProgressView()
+                }
+
+                if isShowingDownloadsPanel && !viewModel.recentCreateJobs.isEmpty {
+                    CreateJobsPanel(viewModel: viewModel)
+                }
+            }
+            .padding()
+        }
+    }
+
+    private var downloadsToolbarButton: some View {
+        ZStack(alignment: .topTrailing) {
+            Image(systemName: viewModel.activeCreateJobs.isEmpty ? "arrow.down.circle" : "arrow.down.circle.fill")
+                .font(.system(size: 15, weight: .semibold))
+
+            if !viewModel.activeCreateJobs.isEmpty {
+                Text("\(viewModel.activeCreateJobs.count)")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 5)
+                    .padding(.vertical, 2)
+                    .background(Color.red, in: Capsule())
+                    .offset(x: 10, y: -8)
             }
         }
+        .frame(width: 24, height: 20)
+        .contentShape(Rectangle())
     }
 
     private var tartInstallCard: some View {
@@ -270,14 +290,16 @@ struct ContentView: View {
     }
 
     private var statsCard: some View {
-        let total = viewModel.vms.count
+        let total = viewModel.totalVisibleSourceCount
         let running = viewModel.vms.filter(\.running).count
-        let local = viewModel.vms.filter(\.isLocal).count
+        let local = viewModel.localSourceCount
+        let oci = viewModel.ociSourceCount
 
         return VStack(alignment: .leading, spacing: 12) {
             statLine(label: "Total", value: "\(total)")
             statLine(label: "Running", value: "\(running)")
             statLine(label: "Local", value: "\(local)")
+            statLine(label: "OCI", value: "\(oci)")
         }
         .padding(16)
         .background(.white, in: RoundedRectangle(cornerRadius: 20))
@@ -302,10 +324,19 @@ struct ContentView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 4) {
-                    Text(vm.name)
+                    Text(vm.isLocal ? vm.name : vm.displayTitle)
                         .font(.system(size: 30, weight: .bold, design: .rounded))
-                    Text(vm.source)
-                        .foregroundStyle(.secondary)
+                    if vm.isLocal {
+                        Text(vm.source)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        Text(vm.displayReference)
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundStyle(slate700)
+                            .textSelection(.enabled)
+                        Text(vm.source)
+                            .foregroundStyle(.secondary)
+                    }
                 }
                 Spacer()
                 if vm.isLocal {
@@ -564,7 +595,7 @@ private struct VMRow: View {
                         .foregroundStyle(osIconForeground)
                         .frame(width: 28, height: 28)
                         .background(osIconBackground, in: RoundedRectangle(cornerRadius: 9))
-                    Text(vm.name)
+                    Text(vm.isLocal ? vm.name : vm.displayTitle)
                         .fontWeight(.semibold)
                         .lineLimit(1)
                         .foregroundStyle(slate900)
@@ -587,6 +618,13 @@ private struct VMRow: View {
             }
             .font(.caption)
             .foregroundStyle(slate700)
+
+            if !vm.isLocal {
+                Text(vm.displayReference)
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(slate700)
+                    .lineLimit(2)
+            }
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
@@ -669,128 +707,142 @@ private struct DetailCard: View {
 private struct CreateVMSheet: View {
     @Bindable var viewModel: TartDeskViewModel
     @Environment(\.dismiss) private var dismiss
+    @State private var sourceListMode: SourceListMode = .official
+    @State private var sourceSearchText = ""
+
+    private enum SourceListMode: String, CaseIterable, Identifiable {
+        case official
+        case available
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .official: "Official OCI Images"
+            case .available: "Available in TartDesk"
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Text("Create Instance")
-                        .font(.system(size: 26, weight: .bold, design: .rounded))
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Create Instance")
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
 
-                    Picker("Mode", selection: $viewModel.createForm.creationMode) {
-                        ForEach(CreateVMFormState.CreationMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
-                        }
+                Picker("Mode", selection: $viewModel.createForm.creationMode) {
+                    ForEach(CreateVMFormState.CreationMode.allCases) { mode in
+                        Text(mode.title).tag(mode)
                     }
-                    .pickerStyle(.segmented)
+                }
+                .pickerStyle(.segmented)
 
-                    TextField("New VM name", text: $viewModel.createForm.name)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("Local VM Name")
+                        .font(.headline)
+                    Text("Saved locally in Tart after creation.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    TextField("my-macos-vm", text: $viewModel.createForm.name)
                         .textFieldStyle(.roundedBorder)
+                }
 
-                    if viewModel.createForm.creationMode == .clone {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Source VM or OCI image")
-                                .font(.headline)
+                if viewModel.createForm.creationMode == .clone {
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text("Source VM or OCI image")
+                            .font(.headline)
 
-                            TextField("ghcr.io/cirruslabs/macos-tahoe-base:latest", text: $viewModel.createForm.sourceName)
-                                .textFieldStyle(.roundedBorder)
+                        TextField("ghcr.io/cirruslabs/macos-tahoe-base:latest", text: $viewModel.createForm.sourceName)
+                            .textFieldStyle(.roundedBorder)
 
-                            Text("Official OCI Images")
-                                .font(.headline)
+                        Picker("Source Library", selection: $sourceListMode) {
+                            ForEach(availableSourceListModes) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
 
-                            Text("Pulled from Tart's current Quick Start image lineup.")
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
+                        TextField("Search images or VMs", text: $sourceSearchText)
+                            .textFieldStyle(.roundedBorder)
 
-                            VStack(spacing: 10) {
-                                ForEach(viewModel.officialCloneSourcePresets) { preset in
+                        Text(sourceListMode == .official
+                             ? "Pulled from Tart's current Quick Start image lineup."
+                             : "Images and VMs already available in TartDesk.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    Stepper(value: $viewModel.createForm.diskSize, in: 10...500, step: 10) {
+                        Text("Disk Size: \(viewModel.createForm.diskSize) GB")
+                    }
+
+                    Toggle("Linux template", isOn: $viewModel.createForm.linuxTemplate)
+                }
+            }
+            .padding(24)
+
+            Divider()
+
+            Group {
+                if viewModel.createForm.creationMode == .clone {
+                    ScrollView {
+                        VStack(spacing: 6) {
+                            if sourceListMode == .official {
+                                ForEach(filteredOfficialPresets) { preset in
                                     Button {
                                         viewModel.selectCreateSource(preset.sourceName)
                                     } label: {
-                                        CloneSourceCard(
+                                        CompactCloneSourceRow(
                                             title: preset.title,
-                                            subtitle: preset.subtitle,
-                                            sourceName: preset.sourceName,
                                             osFamily: preset.osFamily,
+                                            statusLabel: viewModel.hasDownloadedCloneSource(preset.sourceName) ? "Downloaded" : "Not Downloaded",
                                             isSelected: viewModel.createForm.sourceName == preset.sourceName
                                         )
                                     }
                                     .buttonStyle(.plain)
                                 }
-                            }
-
-                            if !viewModel.cloneSourceCandidates.isEmpty {
-                                Text("Available in TartDesk")
-                                    .font(.headline)
-                                    .padding(.top, 6)
-
-                                ScrollView {
-                                    VStack(spacing: 10) {
-                                        ForEach(viewModel.cloneSourceCandidates, id: \.name) { vm in
-                                            Button {
-                                                viewModel.selectCreateSource(vm.name)
-                                            } label: {
-                                                CloneSourceCard(
-                                                    title: vm.name,
-                                                    subtitle: vm.isLocal ? "Local VM" : "Pulled OCI image",
-                                                    sourceName: vm.name,
-                                                    osFamily: TartGuestOSFamily.infer(from: vm.name),
-                                                    isSelected: viewModel.createForm.sourceName == vm.name
-                                                )
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                    }
+                                if filteredOfficialPresets.isEmpty {
+                                    emptySearchState
                                 }
-                                .frame(maxHeight: 180)
-                            }
-                        }
-                    } else {
-                        Stepper(value: $viewModel.createForm.diskSize, in: 10...500, step: 10) {
-                            Text("Disk Size: \(viewModel.createForm.diskSize) GB")
-                        }
-
-                        Toggle("Linux template", isOn: $viewModel.createForm.linuxTemplate)
-                    }
-
-                    if let createProgressMessage = viewModel.createProgressMessage {
-                        VStack(alignment: .leading, spacing: 10) {
-                            if let progressValue = viewModel.createProgressFraction {
-                                ProgressView(value: progressValue, total: 1)
-                                    .progressViewStyle(.linear)
-                                HStack {
-                                    Text(createProgressMessage)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
-                                    Spacer()
-                                    Text("\(Int((progressValue * 100).rounded()))%")
-                                        .font(.subheadline.monospacedDigit())
-                                        .foregroundStyle(.secondary)
-                                }
+                            } else if viewModel.cloneSourceCandidates.isEmpty {
+                                Text("No local VMs or downloaded OCI images yet.")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(16)
+                                    .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+                            } else if filteredCloneCandidates.isEmpty {
+                                emptySearchState
                             } else {
-                                HStack(spacing: 12) {
-                                    ProgressView()
-                                        .controlSize(.regular)
-                                    Text(createProgressMessage)
-                                        .font(.subheadline)
-                                        .foregroundStyle(.secondary)
+                                ForEach(filteredCloneCandidates, id: \.name) { vm in
+                                    Button {
+                                        viewModel.selectCreateSource(vm.name)
+                                    } label: {
+                                        CompactCloneSourceRow(
+                                            title: vm.displayTitle,
+                                            osFamily: TartGuestOSFamily.infer(from: vm.name),
+                                            statusLabel: vm.isLocal ? "Local" : "Downloaded",
+                                            isSelected: viewModel.createForm.sourceName == vm.name
+                                        )
+                                    }
+                                    .buttonStyle(.plain)
                                 }
                             }
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+                        .padding(.horizontal, 24)
+                        .padding(.vertical, 10)
                     }
+                } else {
+                    Color.clear
                 }
-                .padding(24)
             }
+
             Divider()
             HStack {
                 Spacer()
                 Button("Cancel") {
                     dismiss()
                 }
-                .disabled(viewModel.isWorking)
                 Button("Create") {
                     viewModel.startCreateVM()
                     dismiss()
@@ -798,8 +850,7 @@ private struct CreateVMSheet: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(
                     viewModel.createForm.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
-                    (viewModel.createForm.creationMode == .clone && !viewModel.canCreateFromClone) ||
-                    viewModel.isWorking
+                    (viewModel.createForm.creationMode == .clone && !viewModel.canCreateFromClone)
                 )
             }
             .padding(.horizontal, 24)
@@ -807,111 +858,247 @@ private struct CreateVMSheet: View {
             .background(.bar)
         }
         .frame(width: 560, height: 560)
+        .onAppear {
+            if sourceListMode == .available && viewModel.cloneSourceCandidates.isEmpty {
+                sourceListMode = .official
+            }
+        }
+        .onChange(of: viewModel.createForm.creationMode) { _, newValue in
+            guard newValue == .clone else { return }
+            if sourceListMode == .available && viewModel.cloneSourceCandidates.isEmpty {
+                sourceListMode = .official
+            }
+        }
+    }
+
+    private var availableSourceListModes: [SourceListMode] {
+        viewModel.cloneSourceCandidates.isEmpty ? [.official] : SourceListMode.allCases
+    }
+
+    private var filteredOfficialPresets: [TartCloneSourcePreset] {
+        let query = sourceSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return viewModel.officialCloneSourcePresets }
+        return viewModel.officialCloneSourcePresets.filter { preset in
+            preset.title.localizedCaseInsensitiveContains(query) ||
+            preset.sourceName.localizedCaseInsensitiveContains(query) ||
+            preset.osFamily.title.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var filteredCloneCandidates: [TartVM] {
+        let query = sourceSearchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return viewModel.cloneSourceCandidates }
+        return viewModel.cloneSourceCandidates.filter { vm in
+            vm.displayTitle.localizedCaseInsensitiveContains(query) ||
+            vm.displayReference.localizedCaseInsensitiveContains(query) ||
+            vm.shortSource.localizedCaseInsensitiveContains(query)
+        }
+    }
+
+    private var emptySearchState: some View {
+        Text("No matching sources.")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
     }
 }
 
-private struct CreateProgressOverlay: View {
-    let message: String
-    let progressFraction: Double?
-    let onCancel: () -> Void
+private struct CreateJobsPanel: View {
+    @Bindable var viewModel: TartDeskViewModel
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Creating Instance")
-                .font(.system(size: 24, weight: .bold, design: .rounded))
-
-            if let progressFraction {
-                ProgressView(value: progressFraction, total: 1)
-                    .progressViewStyle(.linear)
-
-                HStack {
-                    Text(message)
-                        .font(.body)
-                        .foregroundStyle(.secondary)
-                    Spacer()
-                    Text("\(Int((progressFraction * 100).rounded()))%")
-                        .font(.body.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                }
-            } else {
-                HStack(spacing: 12) {
-                    ProgressView()
-                    Text(message)
-                        .font(.body)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Label("Downloads", systemImage: "arrow.down.circle")
+                    .font(.headline)
+                Spacer()
+                if !viewModel.activeCreateJobs.isEmpty {
+                    Text("\(viewModel.activeCreateJobs.count) active")
+                        .font(.caption.weight(.semibold))
                         .foregroundStyle(.secondary)
                 }
             }
 
-            HStack {
-                Spacer()
-                Button("Cancel") {
-                    onCancel()
+            VStack(spacing: 10) {
+                ForEach(viewModel.recentCreateJobs.prefix(6)) { job in
+                    CreateJobRow(
+                        job: job,
+                        onCancel: { viewModel.cancelCreateOperation(id: job.id) },
+                        onDismiss: { viewModel.dismissCreateJob(id: job.id) }
+                    )
                 }
             }
         }
-        .padding(24)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 22))
+        .padding(14)
+        .frame(width: 360, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 18))
         .overlay(
-            RoundedRectangle(cornerRadius: 22)
-                .stroke(Color.white.opacity(0.35), lineWidth: 1)
+            RoundedRectangle(cornerRadius: 18)
+                .stroke(Color.white.opacity(0.4), lineWidth: 1)
         )
-        .shadow(color: .black.opacity(0.14), radius: 28, y: 14)
+        .shadow(color: .black.opacity(0.10), radius: 20, y: 8)
     }
 }
 
-private struct CloneSourceCard: View {
+private struct CreateJobRow: View {
+    let job: TartCreateJob
+    let onCancel: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(systemName: osFamily.iconName)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(osIconForeground)
+                        .frame(width: 28, height: 28)
+                        .background(osIconBackground, in: RoundedRectangle(cornerRadius: 9))
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(job.displayTitle)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.white.opacity(0.96))
+                            .lineLimit(1)
+                        Text(job.state.title)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(stateColor)
+                    }
+                }
+                Spacer()
+                if job.state.isTerminal {
+                    Button {
+                        onDismiss()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 11, weight: .bold))
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                } else {
+                    Button("Cancel") {
+                        onCancel()
+                    }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                }
+            }
+
+            Text(job.progressMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+
+            if let progressFraction = job.progressFraction, !job.state.isTerminal {
+                VStack(alignment: .leading, spacing: 4) {
+                    ProgressView(value: progressFraction, total: 1)
+                        .progressViewStyle(.linear)
+                    Text("\(Int((progressFraction * 100).rounded()))%")
+                        .font(.caption.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color(NSColor.controlBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+    }
+
+    private var stateColor: Color {
+        switch job.state {
+        case .pulling:
+            return Color(red: 0.10, green: 0.33, blue: 0.80)
+        case .creating:
+            return Color(red: 0.48, green: 0.27, blue: 0.78)
+        case .completed:
+            return Color(red: 0.06, green: 0.47, blue: 0.28)
+        case .failed:
+            return Color.red
+        case .canceled:
+            return Color.orange
+        }
+    }
+
+    private var osFamily: TartGuestOSFamily {
+        let candidate = job.sourceName.isEmpty ? job.name : job.sourceName
+        return TartGuestOSFamily.infer(from: candidate)
+    }
+
+    private var osIconForeground: Color {
+        switch osFamily {
+        case .macOS:
+            return Color(red: 0.10, green: 0.33, blue: 0.80)
+        case .linux:
+            return Color(red: 0.06, green: 0.47, blue: 0.28)
+        case .unknown:
+            return Color.white.opacity(0.8)
+        }
+    }
+
+    private var osIconBackground: Color {
+        switch osFamily {
+        case .macOS:
+            return Color(red: 0.84, green: 0.90, blue: 0.99)
+        case .linux:
+            return Color(red: 0.84, green: 0.95, blue: 0.88)
+        case .unknown:
+            return Color.white.opacity(0.14)
+        }
+    }
+}
+
+private struct CompactCloneSourceRow: View {
     let title: String
-    let subtitle: String
-    let sourceName: String
     let osFamily: TartGuestOSFamily
+    let statusLabel: String?
     let isSelected: Bool
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(spacing: 8) {
             Image(systemName: osFamily.iconName)
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: 14, weight: .semibold))
                 .foregroundStyle(iconForeground)
-                .frame(width: 34, height: 34)
-                .background(iconBackground, in: RoundedRectangle(cornerRadius: 10))
+                .frame(width: 24, height: 24)
+                .background(iconBackground, in: RoundedRectangle(cornerRadius: 7))
 
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 8) {
-                    Text(title)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(titleColor)
-                        .lineLimit(1)
-                    Text(osFamily.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(badgeForeground)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(badgeBackground, in: Capsule())
-                        .overlay(
-                            Capsule()
-                                .stroke(badgeBorder, lineWidth: 1)
-                        )
-                }
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(titleColor)
+                .lineLimit(1)
 
-                Text(subtitle)
-                    .font(.subheadline)
-                    .foregroundStyle(subtitleColor)
-                    .lineLimit(1)
+            Spacer(minLength: 6)
 
-                Text(sourceName)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(sourceNameColor)
-                    .lineLimit(2)
-                    .multilineTextAlignment(.leading)
+            Text(osFamily.title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(badgeForeground)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1)
+                .background(badgeBackground, in: Capsule())
+                .overlay(
+                    Capsule()
+                        .stroke(badgeBorder, lineWidth: 1)
+                )
+
+            if let statusLabel {
+                Text(statusLabel)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(statusForeground)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 1)
+                    .background(statusBackground, in: Capsule())
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background(
             isSelected ? Color.accentColor.opacity(0.12) : Color(NSColor.controlBackgroundColor),
-            in: RoundedRectangle(cornerRadius: 16)
+            in: RoundedRectangle(cornerRadius: 14)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 14)
                 .stroke(isSelected ? Color.accentColor.opacity(0.45) : slate200, lineWidth: 1)
         )
     }
@@ -975,12 +1162,26 @@ private struct CloneSourceCard: View {
         Color.primary
     }
 
-    private var subtitleColor: Color {
-        Color.secondary
+    private var statusForeground: Color {
+        switch statusLabel {
+        case "Downloaded", "Local":
+            return Color(red: 0.06, green: 0.38, blue: 0.22)
+        case "Not Downloaded":
+            return Color(red: 0.52, green: 0.36, blue: 0.05)
+        default:
+            return Color.secondary
+        }
     }
 
-    private var sourceNameColor: Color {
-        Color.secondary
+    private var statusBackground: Color {
+        switch statusLabel {
+        case "Downloaded", "Local":
+            return Color(red: 0.89, green: 0.97, blue: 0.91)
+        case "Not Downloaded":
+            return Color(red: 0.99, green: 0.94, blue: 0.82)
+        default:
+            return Color(NSColor.controlBackgroundColor)
+        }
     }
 }
 
