@@ -38,6 +38,10 @@ struct ContentView: View {
         .task {
             await viewModel.loadInitialData()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard viewModel.isTartAvailable else { return }
+            Task { await viewModel.refresh() }
+        }
         .toolbarBackground(.visible, for: .windowToolbar)
         .toolbar {
             ToolbarItemGroup {
