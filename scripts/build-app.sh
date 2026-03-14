@@ -45,7 +45,7 @@ cat > "$CONTENTS_DIR/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key>
   <string>TartDesk</string>
   <key>CFBundleIdentifier</key>
-  <string>com.anotherball.tartdesk</string>
+  <string>com.mohnya.tartdesk</string>
   <key>CFBundleInfoDictionaryVersion</key>
   <string>6.0</string>
   <key>CFBundleIconFile</key>
