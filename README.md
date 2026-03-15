@@ -52,17 +52,16 @@ The build script also generates and embeds a temporary app icon.
 
 ## Publish GitHub Release
 
-Build the `.app`, zip it, create a version tag, and publish a GitHub Release asset locally:
+For general distribution, use the notarized GitHub Actions flow described in [docs/github-release-distribution.md](docs/github-release-distribution.md).
+
+Push a version tag to trigger the workflow:
 
 ```bash
-./scripts/release-github.sh
+git tag v0.0.1
+git push origin v0.0.1
 ```
 
-You can also pass an explicit version:
-
-```bash
-./scripts/release-github.sh 0.0.1
-```
+This workflow builds, signs, notarizes, staples, and uploads the final zip to GitHub Releases.
 
 ## Features
 
