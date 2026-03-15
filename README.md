@@ -54,6 +54,10 @@ The build script also generates and embeds a temporary app icon.
 
 For general distribution, use the notarized GitHub Actions flow in [`.github/workflows/release.yml`](/Users/mohnya/Projects/Mohnya/tartdesk/.github/workflows/release.yml).
 
+The latest signed app bundle is available from [GitHub Releases](https://github.com/Moomo/TartDesk/releases).
+
+Download the latest `.zip`, extract `TartDesk.app`, then drag and drop it into your `Applications` folder.
+
 Push a version tag to trigger the workflow:
 
 ```bash
