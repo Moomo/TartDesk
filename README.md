@@ -50,9 +50,9 @@ open dist/TartDesk.app
 
 The build script also generates and embeds a temporary app icon.
 
-## Publish GitHub Release
+## Distribution
 
-For general distribution, use the notarized GitHub Actions flow described in [docs/github-release-distribution.md](docs/github-release-distribution.md).
+For general distribution, use the notarized GitHub Actions flow in [`.github/workflows/release.yml`](/Users/mohnya/Projects/Mohnya/tartdesk/.github/workflows/release.yml).
 
 Push a version tag to trigger the workflow:
 
@@ -61,7 +61,14 @@ git tag v0.0.1
 git push origin v0.0.1
 ```
 
-This workflow builds, signs, notarizes, staples, and uploads the final zip to GitHub Releases.
+The workflow runs on the self-hosted macOS runner and:
+
+- builds `TartDesk.app`
+- signs it with `Developer ID Application`
+- notarizes and staples it
+- uploads the final zip to GitHub Releases
+
+You can also run the workflow manually from the GitHub Actions UI when needed.
 
 ## Features
 
