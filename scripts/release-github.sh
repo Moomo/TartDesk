@@ -155,7 +155,7 @@ main() {
     notes_path="$notes_file"
   else
     log "Generating temporary release notes"
-    notes_path="$(mktemp "$DIST_DIR/release-notes.XXXXXX.md")"
+    notes_path="$(mktemp -t tartdesk-release-notes)"
     default_release_notes "$version" > "$notes_path"
   fi
 
