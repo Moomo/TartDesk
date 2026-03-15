@@ -50,6 +50,20 @@ open dist/TartDesk.app
 
 The build script also generates and embeds a temporary app icon.
 
+## Publish GitHub Release
+
+Build the `.app`, zip it, create a version tag, and publish a GitHub Release asset locally:
+
+```bash
+./scripts/release-github.sh
+```
+
+You can also pass an explicit version:
+
+```bash
+./scripts/release-github.sh 0.0.1
+```
+
 ## Features
 
 - List local VMs and OCI images
