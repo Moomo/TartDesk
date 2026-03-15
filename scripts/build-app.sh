@@ -8,6 +8,7 @@ PRODUCT_NAME="tartdesk"
 BUILD_CONFIGURATION="${BUILD_CONFIGURATION:-release}"
 OUTPUT_DIR="${OUTPUT_DIR:-$ROOT_DIR/dist}"
 APP_VERSION="${APP_VERSION:-0.0.1}"
+BUILD_ARCH="${BUILD_ARCH:-arm64}"
 APP_DIR="$OUTPUT_DIR/$APP_NAME.app"
 CONTENTS_DIR="$APP_DIR/Contents"
 MACOS_DIR="$CONTENTS_DIR/MacOS"
@@ -20,8 +21,8 @@ if [[ ! -f "$ICON_PATH" ]]; then
   "$ROOT_DIR/scripts/generate-icon.sh"
 fi
 
-swift build -c "$BUILD_CONFIGURATION" --product "$PRODUCT_NAME"
-BIN_DIR="$(swift build -c "$BUILD_CONFIGURATION" --show-bin-path)"
+swift build -c "$BUILD_CONFIGURATION" --arch "$BUILD_ARCH" --product "$PRODUCT_NAME"
+BIN_DIR="$(swift build -c "$BUILD_CONFIGURATION" --arch "$BUILD_ARCH" --show-bin-path)"
 BIN_PATH="$BIN_DIR/$PRODUCT_NAME"
 
 if [[ ! -x "$BIN_PATH" ]]; then
@@ -74,3 +75,4 @@ if command -v codesign >/dev/null 2>&1; then
 fi
 
 echo "Built app bundle: $APP_DIR"
+file "$MACOS_DIR/$APP_NAME"

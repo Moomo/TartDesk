@@ -76,7 +76,15 @@ jobs:
           echo "SIGNING_IDENTITY=$SIGNING_IDENTITY" >> "$GITHUB_ENV"
 
       - name: Build app bundle
-        run: APP_VERSION="$VERSION" ./scripts/build-app.sh
+        run: APP_VERSION="$VERSION" BUILD_ARCH=arm64 ./scripts/build-app.sh
+
+      - name: Verify app architecture
+        run: |
+          set -euo pipefail
+          APP_BINARY="dist/TartDesk.app/Contents/MacOS/TartDesk"
+          ARCH_INFO="$(file "$APP_BINARY")"
+          echo "$ARCH_INFO"
+          echo "$ARCH_INFO" | grep -q "arm64"
 
       - name: Sign app bundle
         run: |
