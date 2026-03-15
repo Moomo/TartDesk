@@ -88,6 +88,14 @@ struct ContentView: View {
         .sheet(isPresented: $viewModel.isShowingEditSheet) {
             EditVMSheet(viewModel: viewModel)
         }
+        .sheet(
+            isPresented: Binding(
+                get: { viewModel.errorMessage != nil },
+                set: { if !$0 { viewModel.dismissError() } }
+            )
+        ) {
+            ErrorSheet(viewModel: viewModel)
+        }
         .confirmationDialog(
             "Delete VM?",
             isPresented: $isShowingDeleteConfirmation,
@@ -100,21 +108,6 @@ struct ContentView: View {
         } message: {
             Text("This will permanently delete the selected local VM.")
         }
-        .alert(
-            "Tart Error",
-            isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.dismissError() } }
-            ),
-            actions: {
-                Button("OK", role: .cancel) {
-                    viewModel.dismissError()
-                }
-            },
-            message: {
-                Text(viewModel.errorMessage ?? "")
-            }
-        )
         .onChange(of: viewModel.activeCreateJobs.count) { _, newValue in
             if newValue > 0 {
                 isShowingDownloadsPanel = true
@@ -1409,5 +1402,53 @@ private struct EditVMSheet: View {
                 viewModel.errorMessage = error.localizedDescription
             }
         }
+    }
+}
+
+private struct ErrorSheet: View {
+    @Bindable var viewModel: TartDeskViewModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack(alignment: .firstTextBaseline) {
+                Label("Tart Error", systemImage: "exclamationmark.triangle.fill")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(.primary)
+
+                Spacer()
+
+                Button("Close") {
+                    viewModel.dismissError()
+                }
+                .keyboardShortcut(.cancelAction)
+            }
+
+            ScrollView {
+                Text(viewModel.errorMessage ?? "")
+                    .font(.system(.body, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
+            }
+            .frame(minHeight: 180, maxHeight: 320)
+            .background(Color(NSColor.textBackgroundColor), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(
+                RoundedRectangle(cornerRadius: 14)
+                    .stroke(slate200.opacity(0.9), lineWidth: 1)
+            )
+
+            HStack {
+                Spacer()
+
+                Button("OK") {
+                    viewModel.dismissError()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(24)
+        .frame(width: 560)
+        .background(Color(NSColor.windowBackgroundColor))
     }
 }
