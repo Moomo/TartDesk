@@ -38,6 +38,10 @@ die() {
   exit 1
 }
 
+log() {
+  echo "==> $*"
+}
+
 require_command() {
   command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
 }
@@ -131,40 +135,48 @@ main() {
   local checksum_path="$zip_path.sha256"
   local notes_path=""
 
-  echo "Version: $version"
-  echo "Tag: $tag"
+  log "Version: $version"
+  log "Tag: $tag"
 
+  log "Building app bundle"
   "$BUILD_SCRIPT"
 
   [[ -d "$APP_PATH" ]] || die "built app not found: $APP_PATH"
 
+  log "Creating zip archive"
   rm -f "$zip_path" "$checksum_path"
   ditto -c -k --keepParent "$APP_PATH" "$zip_path"
+
+  log "Generating sha256 checksum"
   shasum -a 256 "$zip_path" > "$checksum_path"
 
   if [[ -n "$notes_file" ]]; then
     [[ -f "$notes_file" ]] || die "notes file not found: $notes_file"
     notes_path="$notes_file"
   else
+    log "Generating temporary release notes"
     notes_path="$(mktemp "$DIST_DIR/release-notes.XXXXXX.md")"
     default_release_notes "$version" > "$notes_path"
   fi
 
   if git rev-parse "$tag" >/dev/null 2>&1; then
-    echo "Tag already exists locally: $tag"
+    log "Tag already exists locally: $tag"
   else
+    log "Creating local tag: $tag"
     git tag "$tag"
   fi
 
   if git ls-remote --tags origin "refs/tags/$tag" | grep -q "$tag"; then
-    echo "Tag already exists on origin: $tag"
+    log "Tag already exists on origin: $tag"
   else
+    log "Pushing tag to origin"
     git push origin "$tag"
   fi
 
   if gh release view "$tag" >/dev/null 2>&1; then
-    echo "Release already exists: $tag"
+    log "Release already exists: $tag"
   else
+    log "Creating GitHub Release: $tag"
     gh release create "$tag" \
       "$zip_path" \
       "$checksum_path" \
@@ -172,14 +184,15 @@ main() {
       --notes-file "$notes_path"
   fi
 
+  log "Uploading release assets"
   gh release upload "$tag" \
     "$zip_path" \
     "$checksum_path" \
     --clobber
 
-  echo "Release published: $tag"
-  echo "Asset: $zip_path"
-  echo "Checksum: $checksum_path"
+  log "Release published: $tag"
+  log "Asset: $zip_path"
+  log "Checksum: $checksum_path"
 }
 
 main "$@"
