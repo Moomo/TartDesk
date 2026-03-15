@@ -2,77 +2,26 @@
 
 `TartDesk` is a macOS desktop app for managing [Tart](https://github.com/cirruslabs/tart) virtual machines and OCI images with SwiftUI.
 
+## Download
+
+The latest signed app bundle is available from [GitHub Releases](https://github.com/Moomo/TartDesk/releases).
+
+1. Download the latest `.zip` from Releases.
+2. Extract `TartDesk.app`.
+3. Drag and drop `TartDesk.app` into your `Applications` folder.
+4. Install `Tart` if it is not already available on your Mac.
+
+```bash
+brew install cirruslabs/cli/tart
+```
+
 ## Requirements
 
 - macOS 14+
 - `tart` installed separately and available on the machine
 - Tart-compatible VMs or OCI images
 
-`TartDesk` does not bundle `Tart`. Install it separately with:
-
-```bash
-brew install cirruslabs/cli/tart
-```
-
-## Development
-
-Run the app directly from Swift Package Manager:
-
-```bash
-swift run
-```
-
-Build only:
-
-```bash
-swift build
-```
-
-## Build `.app`
-
-Build a local `.app` bundle for ad-hoc use:
-
-```bash
-./scripts/build-app.sh
-```
-
-Generated app:
-
-```bash
-dist/TartDesk.app
-```
-
-Open it:
-
-```bash
-open dist/TartDesk.app
-```
-
-The build script also generates and embeds a temporary app icon.
-
-## Distribution
-
-For general distribution, use the notarized GitHub Actions flow in [`.github/workflows/release.yml`](/Users/mohnya/Projects/Mohnya/tartdesk/.github/workflows/release.yml).
-
-The latest signed app bundle is available from [GitHub Releases](https://github.com/Moomo/TartDesk/releases).
-
-Download the latest `.zip`, extract `TartDesk.app`, then drag and drop it into your `Applications` folder.
-
-Push a version tag to trigger the workflow:
-
-```bash
-git tag v0.0.1
-git push origin v0.0.1
-```
-
-The workflow runs on the self-hosted macOS runner and:
-
-- builds `TartDesk.app`
-- signs it with `Developer ID Application`
-- notarizes and staples it
-- uploads the final zip to GitHub Releases
-
-You can also run the workflow manually from the GitHub Actions UI when needed.
+`TartDesk` does not bundle `Tart`.
 
 ## Features
 
@@ -104,6 +53,46 @@ You can also run the workflow manually from the GitHub Actions UI when needed.
   - `tart exec` requires Tart Guest Agent support in the guest
   - Shared folders require Tart's directory sharing support; macOS guests mount them under `/Volumes/My Shared Files` by default
 - `dist/` is a build artifact directory and is not meant to be committed.
+
+## Release Workflow
+
+General distribution uses the notarized GitHub Actions flow in [`.github/workflows/release.yml`](/Users/mohnya/Projects/Mohnya/tartdesk/.github/workflows/release.yml).
+
+Push a version tag to trigger the workflow:
+
+```bash
+git tag v0.0.1
+git push origin v0.0.1
+```
+
+The workflow runs on the self-hosted macOS runner and:
+
+- builds `TartDesk.app`
+- signs it with `Developer ID Application`
+- notarizes and staples it
+- uploads the final zip to GitHub Releases
+
+You can also run the workflow manually from the GitHub Actions UI when needed.
+
+## Development
+
+Run the app directly from Swift Package Manager:
+
+```bash
+swift run
+```
+
+Build only:
+
+```bash
+swift build
+```
+
+Build a local `.app` bundle:
+
+```bash
+./scripts/build-app.sh
+```
 
 ## License
 
