@@ -55,6 +55,10 @@ jobs:
           CERT_BASE64_PATH="$RUNNER_TEMP/developer-id.p12.b64"
           KEYCHAIN_PATH="$RUNNER_TEMP/build.keychain-db"
 
+          echo "CERT_PATH=$CERT_PATH" >> "$GITHUB_ENV"
+          echo "CERT_BASE64_PATH=$CERT_BASE64_PATH" >> "$GITHUB_ENV"
+          echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
+
           printf '%s' "$APPLE_CERT_BASE64" > "$CERT_BASE64_PATH"
           base64 -D -i "$CERT_BASE64_PATH" -o "$CERT_PATH"
 
@@ -142,3 +146,16 @@ jobs:
               --title "$TAG" \
               --generate-notes
           fi
+
+      - name: Cleanup signing keychain
+        if: always()
+        run: |
+          set +e
+
+          if [[ -n "${KEYCHAIN_PATH:-}" ]]; then
+            security default-keychain -s login.keychain-db || true
+            security list-keychains -d user -s login.keychain-db || true
+            security delete-keychain "$KEYCHAIN_PATH" || true
+          fi
+
+          rm -f "${CERT_PATH:-}" "${CERT_BASE64_PATH:-}" "${APPLE_API_KEY_PATH:-}"
