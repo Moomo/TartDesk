@@ -1,6 +1,8 @@
 # TartDesk
 
-`TartDesk` is a macOS desktop app for managing [Tart](https://github.com/cirruslabs/tart) virtual machines and OCI images with SwiftUI.
+TartDesk is a macOS desktop GUI for managing [Tart](https://github.com/cirruslabs/tart) virtual machines and OCI images.
+
+Built with SwiftUI, it provides a native interface for browsing local Tart VMs, creating VMs from OCI images, editing VM settings, running or stopping machines, and accessing SSH information from your Mac.
 
 ## Download
 
