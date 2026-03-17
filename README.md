@@ -4,6 +4,8 @@ TartDesk is a macOS desktop GUI for managing [Tart](https://github.com/cirruslab
 
 Built with SwiftUI, it provides a native interface for browsing local Tart VMs, creating VMs from OCI images, editing VM settings, running or stopping machines, and accessing SSH information from your Mac.
 
+If Tart is not installed, TartDesk shows an install screen on launch and can install Tart for you from within the app via Homebrew.
+
 ## Download
 
 The latest signed app bundle is available from [GitHub Releases](https://github.com/Moomo/TartDesk/releases).
@@ -11,7 +13,8 @@ The latest signed app bundle is available from [GitHub Releases](https://github.
 1. Download the latest `.zip` from Releases.
 2. Extract `TartDesk.app`.
 3. Drag and drop `TartDesk.app` into your `Applications` folder.
-4. Install `Tart` if it is not already available on your Mac.
+4. Launch `TartDesk`. If `Tart` is missing, the app will prompt you to install it and can run the Homebrew install command for you.
+5. Install `Tart` manually if you prefer:
 
 ```bash
 brew install cirruslabs/cli/tart
@@ -21,6 +24,7 @@ brew install cirruslabs/cli/tart
 
 - macOS 14+
 - `tart` installed separately and available on the machine
+- Homebrew if you want TartDesk to install `Tart` for you from inside the app
 - Tart-compatible VMs or OCI images
 
 `TartDesk` does not bundle `Tart`.
@@ -28,6 +32,8 @@ brew install cirruslabs/cli/tart
 ## Features
 
 - List local VMs and OCI images
+- Detect when `Tart` is missing and show an install flow on launch
+- Install `Tart` from inside the app via Homebrew
 - Deduplicate OCI tag and digest entries in the UI
 - Run local VMs in graphics or headless mode
 - Configure per-VM shared folders from Edit VM Settings and apply them on run
@@ -50,6 +56,7 @@ brew install cirruslabs/cli/tart
 
 - OCI images cannot be run directly. Clone them into a local VM first.
 - `TartDesk` is a GUI wrapper around the `tart` CLI and depends on a separately installed `Tart`.
+- If `Tart` is not installed, TartDesk can trigger `brew install cirruslabs/cli/tart` from the app. This requires Homebrew to already be installed.
 - Some features depend on guest setup, for example:
   - SSH requires guest networking and an SSH server
   - `tart exec` requires Tart Guest Agent support in the guest
